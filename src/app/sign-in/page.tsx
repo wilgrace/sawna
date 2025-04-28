@@ -6,7 +6,6 @@ export default function SignInPage() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <SignIn
-        path="/sign-in"
         // Change routing to "virtual"
         routing="virtual" // <--- CHANGE THIS
         signUpUrl="/sign-up"
