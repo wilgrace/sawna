@@ -7,13 +7,13 @@ import { SessionForm } from "@/components/admin/session-form"
 import { SessionTemplate } from "@/types/session"
 
 interface CalendarPageProps {
-  initialTemplates: SessionTemplate[]
+  initialSessions: SessionTemplate[]
 }
 
-export function CalendarPage({ initialTemplates }: CalendarPageProps) {
-  const [templates, setTemplates] = useState(initialTemplates)
+export function CalendarPage({ initialSessions }: CalendarPageProps) {
+  const [sessions, setSessions] = useState(initialSessions)
   const [showSessionForm, setShowSessionForm] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState<SessionTemplate | null>(null)
+  const [selectedSession, setSelectedSession] = useState<SessionTemplate | null>(null)
 
   return (
     <div className="flex-1 space-y-4 p-8 pt-6">
@@ -27,23 +27,23 @@ export function CalendarPage({ initialTemplates }: CalendarPageProps) {
         </button>
       </div>
 
-      {!templates || templates.length === 0 ? (
+      {!sessions || sessions.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-gray-500">No sessions found. Click "New Session" to create one.</p>
         </div>
       ) : (
         <div className="space-y-6">
           <CalendarView 
-            templates={templates} 
-            onEditSession={(template) => {
-              setSelectedTemplate(template)
+            sessions={sessions} 
+            onEditSession={(session) => {
+              setSelectedSession(session)
               setShowSessionForm(true)
             }}
           />
           <ListView 
-            templates={templates}
-            onEditSession={(template) => {
-              setSelectedTemplate(template)
+            sessions={sessions}
+            onEditSession={(session) => {
+              setSelectedSession(session)
               setShowSessionForm(true)
             }}
           />
@@ -54,9 +54,9 @@ export function CalendarPage({ initialTemplates }: CalendarPageProps) {
         open={showSessionForm}
         onClose={() => {
           setShowSessionForm(false)
-          setSelectedTemplate(null)
+          setSelectedSession(null)
         }}
-        template={selectedTemplate}
+        template={selectedSession}
         onSuccess={() => {
           // Refresh the page to get new data
           window.location.reload()

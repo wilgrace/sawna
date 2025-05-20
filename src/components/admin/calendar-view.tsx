@@ -10,11 +10,11 @@ import { SessionTemplate } from "@/types/session"
 import { cn } from "@/lib/utils"
 
 interface CalendarViewProps {
-  templates: SessionTemplate[]
-  onEditSession: (template: SessionTemplate) => void
+  sessions: SessionTemplate[]
+  onEditSession: (session: SessionTemplate) => void
 }
 
-export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
+export function CalendarView({ sessions, onEditSession }: CalendarViewProps) {
   const [viewMode, setViewMode] = useState<"list" | "grid" | "calendar">("calendar")
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
@@ -34,7 +34,7 @@ export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
   }
 
   const getSessionsForDate = (date: Date) => {
-    return templates.filter(template => {
+    return sessions.filter(template => {
       if (template.instances) {
         return template.instances.some(instance => {
           const instanceDate = new Date(instance.start_time)
@@ -162,7 +162,7 @@ export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {templates.map((template) => {
+              {sessions.map((template) => {
                 const nextInstance = getNextInstance(template)
                 return (
                   <TableRow
@@ -194,7 +194,7 @@ export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {templates.map((template) => {
+          {sessions.map((template) => {
             const nextInstance = getNextInstance(template)
             return (
               <div

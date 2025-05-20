@@ -1,63 +1,33 @@
 "use client"
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import type { SessionTemplate } from "@/types/session"
-import { format } from "date-fns"
+import { SessionTemplate } from "@/types/session"
 
 interface ListViewProps {
-  templates: SessionTemplate[]
-  onEditSession: (template: SessionTemplate) => void
+  sessions: SessionTemplate[]
+  onEditSession: (session: SessionTemplate) => void
 }
 
-export function ListView({ templates, onEditSession }: ListViewProps) {
+export function ListView({ sessions, onEditSession }: ListViewProps) {
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Session</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Time</TableHead>
-            <TableHead>Capacity</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {templates.map((template) => (
-            <TableRow
-              key={template.id}
-              className="cursor-pointer hover:bg-gray-50"
-              onClick={() => onEditSession(template)}
+    <div className="bg-white rounded-lg shadow">
+      <div className="p-4">
+        <h3 className="text-lg font-medium">List View</h3>
+        <div className="mt-4">
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className="p-2 border rounded mb-2 cursor-pointer hover:bg-gray-50"
+              onClick={() => onEditSession(session)}
             >
-              <TableCell className="font-medium">{template.name}</TableCell>
-              <TableCell>
-                {template.instances?.[0]?.start_time 
-                  ? format(new Date(template.instances[0].start_time), "MMM d, yyyy")
-                  : "No date"}
-              </TableCell>
-              <TableCell>
-                {template.instances?.[0]?.start_time 
-                  ? format(new Date(template.instances[0].start_time), "h:mm a")
-                  : template.schedules?.[0]?.time || "No time"}
-              </TableCell>
-              <TableCell>{template.capacity}</TableCell>
-              <TableCell>
-                <Badge variant={template.is_open ? "success" : "secondary"}>
-                  {template.is_open ? "Open" : "Closed"}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <Button variant="ghost" size="sm">
-                  Edit
-                </Button>
-              </TableCell>
-            </TableRow>
+              <h4 className="font-medium">{session.name}</h4>
+              <p className="text-sm text-gray-500">{session.description}</p>
+              <div className="text-sm text-gray-500">
+                Capacity: {session.capacity} | Duration: {session.duration_minutes} minutes
+              </div>
+            </div>
           ))}
-        </TableBody>
-      </Table>
+        </div>
+      </div>
     </div>
   )
 }

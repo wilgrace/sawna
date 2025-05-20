@@ -222,36 +222,57 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       }
     }
 
-    const { data, error } = await supabase
-      .from("session_schedules")
-      .insert({
-        session_template_id: params.session_template_id,
-        template_id: params.session_template_id,
-        time: params.time,
-        days: params.days,
-        start_time_local: params.start_time_local
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Error creating session schedule:", error)
-      return {
-        success: false,
-        error: error.message
-      }
+    // Convert day names to day_of_week integers
+    const dayMap: { [key: string]: number } = {
+      'sunday': 0,
+      'monday': 1,
+      'tuesday': 2,
+      'wednesday': 3,
+      'thursday': 4,
+      'friday': 5,
+      'saturday': 6
     }
 
-    if (!data) {
+    // Create a schedule for each day
+    const schedulePromises = params.days.map(async (day) => {
+      const dayOfWeek = dayMap[day.toLowerCase()]
+      if (dayOfWeek === undefined) {
+        throw new Error(`Invalid day: ${day}`)
+      }
+
+      // Ensure time is in HH:mm:ss format
+      const time = params.time.length === 5 ? `${params.time}:00` : params.time
+
+      const { data, error } = await supabase
+        .from("session_schedules")
+        .insert({
+          session_template_id: params.session_template_id,
+          template_id: params.session_template_id,
+          start_time_of_day: time,
+          day_of_week: dayOfWeek
+        })
+        .select()
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      return data
+    })
+
+    const results = await Promise.all(schedulePromises)
+
+    if (results.some(result => !result)) {
       return {
         success: false,
-        error: "No data returned from insert"
+        error: "Failed to create some schedules"
       }
     }
 
     return {
       success: true,
-      id: data.id
+      id: results[0].id // Return the first schedule's ID
     }
   } catch (error) {
     console.error("Error in createSessionSchedule:", error)
@@ -315,6 +336,82 @@ export async function getSessionTemplates(): Promise<{ data: SessionTemplate[] |
     return { data: transformedData, error: null }
   } catch (error) {
     console.error("Error in getSessionTemplates:", error)
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : "Unknown error occurred" 
+    }
+  }
+}
+
+export async function getSessions(): Promise<{ data: SessionTemplate[] | null; error: string | null }> {
+  try {
+    const userId = await getAuthenticatedUser()
+    const supabase = createSupabaseClient()
+
+    const { data, error } = await supabase
+      .from("session_templates")
+      .select(`
+        id,
+        name,
+        description,
+        capacity,
+        duration_minutes,
+        is_open,
+        created_at,
+        updated_at,
+        created_by,
+        schedules:session_schedules!session_template_id (
+          id,
+          start_time_of_day,
+          day_of_week
+        ),
+        instances:session_instances!template_id (
+          id,
+          start_time,
+          end_time,
+          status
+        )
+      `)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error fetching sessions:", error)
+      return { data: null, error: error.message }
+    }
+
+    // Transform the data to match SessionTemplate type
+    const transformedData = data?.map(template => ({
+      ...template,
+      schedules: template.schedules?.map(schedule => {
+        // Convert day_of_week (0-6) to day name
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+        const dayName = dayNames[schedule.day_of_week]
+
+        // Format time from HH:mm:ss to HH:mm
+        const time = schedule.start_time_of_day.substring(0, 5)
+
+        return {
+          id: schedule.id,
+          time,
+          days: [dayName],
+          session_id: template.id,
+          is_recurring: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      }) || [],
+      instances: template.instances?.map(instance => ({
+        id: instance.id,
+        start_time: instance.start_time,
+        end_time: instance.end_time,
+        status: instance.status,
+        template_id: template.id
+      })) || []
+    })) || []
+
+    return { data: transformedData, error: null }
+  } catch (error) {
+    console.error("Error in getSessions:", error)
     return { 
       data: null, 
       error: error instanceof Error ? error.message : "Unknown error occurred" 
