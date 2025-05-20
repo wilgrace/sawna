@@ -31,14 +31,12 @@ export interface SessionTemplate {
   created_at: string
   updated_at: string
   created_by: string
-  schedules?: {
-    id: string
-    time: string
-    days: string[]
-  }[]
-  instances?: {
-    id: string
-    start_time: string
-    end_time: string
-  }[]
+  schedules?: SessionSchedule[]
+  instances?: SessionInstance[]
+}
+
+export interface SessionInstance {
+  id: string
+  start_time: string
+  end_time: string
 } 
