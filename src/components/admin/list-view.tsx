@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { SessionTemplate } from "@/types/session"
+import { format } from "date-fns"
 
 interface ListViewProps {
   templates: SessionTemplate[]
@@ -33,12 +34,14 @@ export function ListView({ templates, onEditSession }: ListViewProps) {
             >
               <TableCell className="font-medium">{template.name}</TableCell>
               <TableCell>
-                {template.session_instances?.[0]?.date 
-                  ? new Date(template.session_instances[0].date).toLocaleDateString()
+                {template.instances?.[0]?.start_time 
+                  ? format(new Date(template.instances[0].start_time), "MMM d, yyyy")
                   : "No date"}
               </TableCell>
               <TableCell>
-                {template.session_instances?.[0]?.time || template.session_schedules?.[0]?.time || "No time"}
+                {template.instances?.[0]?.start_time 
+                  ? format(new Date(template.instances[0].start_time), "h:mm a")
+                  : template.schedules?.[0]?.time || "No time"}
               </TableCell>
               <TableCell>{template.capacity}</TableCell>
               <TableCell>

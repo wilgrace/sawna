@@ -4,30 +4,10 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { List, LayoutGrid } from "lucide-react"
-import { format } from "date-fns"
-
-interface SessionTemplate {
-  id: string
-  name: string
-  description?: string
-  capacity: number
-  duration: string
-  is_open: boolean
-  created_at: string
-  updated_at: string
-  created_by: string
-  schedules?: {
-    id: string
-    time: string
-    days: string[]
-  }[]
-  instances?: {
-    id: string
-    date: string
-    time: string
-  }[]
-}
+import { List, LayoutGrid, ChevronLeft, ChevronRight, Calendar } from "lucide-react"
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from "date-fns"
+import { SessionTemplate } from "@/types/session"
+import { cn } from "@/lib/utils"
 
 interface CalendarViewProps {
   templates: SessionTemplate[]
@@ -35,7 +15,8 @@ interface CalendarViewProps {
 }
 
 export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list")
+  const [viewMode, setViewMode] = useState<"list" | "grid" | "calendar">("calendar")
+  const [currentMonth, setCurrentMonth] = useState(new Date())
 
   const getNextInstance = (template: SessionTemplate) => {
     if (template.instances && template.instances.length > 0) {
@@ -51,6 +32,32 @@ export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
     }
     return null
   }
+
+  const getSessionsForDate = (date: Date) => {
+    return templates.filter(template => {
+      if (template.instances) {
+        return template.instances.some(instance => {
+          const instanceDate = new Date(instance.start_time)
+          return instanceDate.toDateString() === date.toDateString()
+        })
+      }
+      if (template.schedules) {
+        return template.schedules.some(schedule => {
+          const dayOfWeek = format(date, 'EEE').toLowerCase()
+          return schedule.days.includes(dayOfWeek)
+        })
+      }
+      return false
+    })
+  }
+
+  const days = eachDayOfInterval({
+    start: startOfMonth(currentMonth),
+    end: endOfMonth(currentMonth)
+  })
+
+  const previousMonth = () => setCurrentMonth(subMonths(currentMonth, 1))
+  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1))
 
   return (
     <div className="space-y-6">
@@ -70,10 +77,78 @@ export function CalendarView({ templates, onEditSession }: CalendarViewProps) {
           >
             <LayoutGrid className="h-4 w-4" />
           </Button>
+          <Button 
+            variant={viewMode === "calendar" ? "default" : "outline"} 
+            size="icon" 
+            onClick={() => setViewMode("calendar")}
+          >
+            <Calendar className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      {viewMode === "list" ? (
+      {viewMode === "calendar" ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">
+              {format(currentMonth, "MMMM yyyy")}
+            </h2>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="icon" onClick={previousMonth}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={nextMonth}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <div key={day} className="bg-gray-50 p-2 text-center text-sm font-medium text-gray-500">
+                {day}
+              </div>
+            ))}
+            {days.map((day, dayIdx) => {
+              const sessions = getSessionsForDate(day)
+              return (
+                <div
+                  key={day.toString()}
+                  className={cn(
+                    "min-h-[100px] bg-white p-2",
+                    !isSameMonth(day, currentMonth) && "bg-gray-50 text-gray-400",
+                    isToday(day) && "bg-blue-50"
+                  )}
+                >
+                  <div className="flex justify-between items-start">
+                    <span className={cn(
+                      "text-sm",
+                      isToday(day) && "font-bold text-blue-600"
+                    )}>
+                      {format(day, "d")}
+                    </span>
+                    {sessions.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {sessions.length} session{sessions.length > 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {sessions.map((template) => (
+                      <div
+                        key={template.id}
+                        className="text-xs p-1 rounded bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                        onClick={() => onEditSession(template)}
+                      >
+                        {template.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : viewMode === "list" ? (
         <div className="rounded-md border">
           <Table>
             <TableHeader>

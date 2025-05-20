@@ -26,19 +26,19 @@ export interface SessionTemplate {
   name: string
   description?: string
   capacity: number
-  duration: string
+  duration_minutes: number
   is_open: boolean
   created_at: string
   updated_at: string
   created_by: string
-  session_schedules?: {
+  schedules?: {
     id: string
     time: string
     days: string[]
   }[]
-  session_instances?: {
+  instances?: {
     id: string
-    date: string
-    time: string
+    start_time: string
+    end_time: string
   }[]
 } 

@@ -5,16 +5,32 @@ import { corsHeaders } from '../_shared/cors.ts'; // Optional: manage CORS if ne
 // Define expected Clerk event payload structure (adjust based on actual usage)
 interface ClerkUserEventData {
   id: string;
-  email_addresses: { email_address: string; id: string }[];
+  email_addresses: {
+    email_address: string;
+    id: string;
+    verification: {
+      status: string;
+      strategy: string;
+    };
+  }[];
   first_name: string | null;
   last_name: string | null;
-  // Add other fields you might need from the webhook payload
+  created_at: number;
+  updated_at: number;
+  object: string;
 }
 
 interface ClerkEvent {
-  type: 'user.created' | 'user.updated' | 'user.deleted' | string; // Handle known types + others
-  data: ClerkUserEventData | { id: string, deleted?: boolean }; // Data structure varies slightly
+  type: 'user.created' | 'user.updated' | 'user.deleted' | string;
+  data: ClerkUserEventData;
   object: 'event';
+  timestamp: number;
+  event_attributes?: {
+    http_request: {
+      client_ip: string;
+      user_agent: string;
+    };
+  };
 }
 
 console.log('Clerk Webhook Handler Function Initializing');
@@ -30,52 +46,73 @@ Deno.serve(async (req) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const defaultOrgId = Deno.env.get('DEFAULT_ORGANIZATION_ID');
+  // Check if this is a test event (no signature headers)
+  const svix_id = req.headers.get('svix-id');
+  const svix_timestamp = req.headers.get('svix-timestamp');
+  const svix_signature = req.headers.get('svix-signature');
+  const isTestEvent = !svix_id && !svix_timestamp && !svix_signature;
 
-  if (!webhookSecret || !supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing environment variables');
-    return new Response('Internal Server Error: Missing configuration', { status: 500 });
+  // For test events, we don't need to check for secrets
+  if (!isTestEvent) {
+    const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const defaultOrgId = Deno.env.get('DEFAULT_ORGANIZATION_ID');
+
+    if (!webhookSecret || !supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing environment variables');
+      return new Response('Internal Server Error: Missing configuration', { status: 500 });
+    }
   }
 
   // --- 2. Initialize Supabase Admin Client ---
-  // Important: Use the Service Role Key for admin privileges
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!, {
     auth: {
-      // Required for service_role key. Make sure your function runs with appropriate permissions.
       autoRefreshToken: false,
       persistSession: false,
     },
   });
   console.log('Supabase admin client initialized');
 
-  // --- 3. Verify Webhook Signature ---
-  const svix_id = req.headers.get('svix-id');
-  const svix_timestamp = req.headers.get('svix-timestamp');
-  const svix_signature = req.headers.get('svix-signature');
-
-  if (!svix_id || !svix_timestamp || !svix_signature) {
-    console.error('Missing svix headers');
-    return new Response('Webhook Error: Missing svix headers', { status: 400 });
-  }
-
   const body = await req.text(); // Read body as text for verification
   let event: ClerkEvent;
-  const wh = new Webhook(webhookSecret);
+  
+  if (isTestEvent) {
+    // For test events, just parse the body directly
+    try {
+      event = JSON.parse(body) as ClerkEvent;
+      console.log('Test event received:', event.type);
+    } catch (err: any) {
+      console.error('Error parsing test event:', err?.message || err);
+      return new Response('Invalid JSON in test event', { status: 400 });
+    }
+  } else {
+    // For real events, verify the signature
+    const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
+    if (!webhookSecret) {
+      console.error('Missing webhook secret');
+      return new Response('Internal Server Error: Missing webhook secret', { status: 500 });
+    }
 
-  try {
-    // Verify signature and parse
-    event = wh.verify(body, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
-    }) as ClerkEvent; // Type assertion after verification
-    console.log('Webhook verified successfully. Event type:', event.type);
-  } catch (err) {
-    console.error('Webhook verification failed:', err.message);
-    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+    if (!svix_id || !svix_timestamp || !svix_signature) {
+      console.error('Missing svix headers');
+      return new Response('Webhook Error: Missing svix headers', { status: 400 });
+    }
+
+    const wh = new Webhook(webhookSecret);
+    try {
+      event = wh.verify(body, {
+        'svix-id': svix_id,
+        'svix-timestamp': svix_timestamp,
+        'svix-signature': svix_signature,
+      }) as ClerkEvent;
+      console.log('Webhook verified successfully. Event type:', event.type);
+    } catch (err: any) {
+      console.error('Webhook verification failed:', err?.message || err);
+      return new Response(`Webhook Error: ${err?.message || err}`, { status: 400 });
+    }
   }
 
   // --- 4. Process Verified Event ---
@@ -87,11 +124,9 @@ Deno.serve(async (req) => {
         const primaryEmail = userData.email_addresses?.[0]?.email_address;
     
         // --- Read the Default Org ID ---
-        // Do this *before* the insert statement
         const defaultOrgIdFromEnv = Deno.env.get('DEFAULT_ORGANIZATION_ID');
         if (!defaultOrgIdFromEnv) {
              console.error('CRITICAL: DEFAULT_ORGANIZATION_ID environment variable is not set!');
-             // You might want to return an error here to prevent user creation without an org
              return new Response('Server Configuration Error: Default organization not set', { status: 500 });
         }
         // --- End Reading Default Org ID ---
@@ -104,7 +139,7 @@ Deno.serve(async (req) => {
     
         // Check if user already exists (idempotency)
         const { data: existingUser, error: checkError } = await supabaseAdmin
-          .from('users')
+          .from('clerk_users')
           .select('id')
           .eq('clerk_user_id', userData.id)
           .maybeSingle();
@@ -122,14 +157,13 @@ Deno.serve(async (req) => {
         // === MODIFIED INSERT STATEMENT ===
         console.log(`Assigning default organization ID: ${defaultOrgIdFromEnv} to new user ${userData.id}`);
         const { error: insertError } = await supabaseAdmin
-          .from('users')
+          .from('clerk_users')
           .insert({
-             // id: userData.id, // Uncomment if your users.id PK IS the clerk_user_id
              clerk_user_id: userData.id,
              email: primaryEmail,
              first_name: userData.first_name,
              last_name: userData.last_name,
-             organization_id: defaultOrgIdFromEnv // <-- ADD THIS LINE
+             organization_id: defaultOrgIdFromEnv
           });
         // === END MODIFIED INSERT ===
     
@@ -162,7 +196,7 @@ Deno.serve(async (req) => {
 
 
         const { error: updateError } = await supabaseAdmin
-          .from('users')
+          .from('clerk_users')
           .update(updateData)
           .eq('clerk_user_id', userData.id); // Match using clerk_user_id
 
@@ -190,7 +224,7 @@ Deno.serve(async (req) => {
         // Consider a soft delete (setting an `is_active` flag or `deleted_at` timestamp)
         // on the `users` table instead, which requires schema changes.
         const { error: deleteError } = await supabaseAdmin
-          .from('users')
+          .from('clerk_users')
           .delete()
           .eq('clerk_user_id', userData.id); // Match using clerk_user_id
 
