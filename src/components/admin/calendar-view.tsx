@@ -23,11 +23,14 @@ export function CalendarView({ sessions, onEditSession }: CalendarViewProps) {
       return template.instances[0]
     }
     if (template.schedules && template.schedules.length > 0) {
-      // Logic to calculate next occurrence based on schedule
-      // This is a simplified version
+      // For schedules, we'll create a temporary instance with start_time
+      const now = new Date()
+      const [hours, minutes] = template.schedules[0].time.split(':').map(Number)
+      now.setHours(hours, minutes, 0, 0)
       return {
-        date: new Date().toISOString(),
-        time: template.schedules[0].time
+        id: 'temp',
+        start_time: now.toISOString(),
+        end_time: new Date(now.getTime() + template.duration_minutes * 60000).toISOString()
       }
     }
     return null
@@ -172,9 +175,9 @@ export function CalendarView({ sessions, onEditSession }: CalendarViewProps) {
                   >
                     <TableCell className="font-medium">{template.name}</TableCell>
                     <TableCell>
-                      {nextInstance ? format(new Date(nextInstance.date), "PPP") : "No upcoming sessions"}
+                      {nextInstance ? format(new Date(nextInstance.start_time), "PPP") : "No upcoming sessions"}
                     </TableCell>
-                    <TableCell>{nextInstance?.time || "N/A"}</TableCell>
+                    <TableCell>{nextInstance ? format(new Date(nextInstance.start_time), "HH:mm") : "N/A"}</TableCell>
                     <TableCell>{template.capacity}</TableCell>
                     <TableCell>
                       <Badge variant={template.is_open ? "success" : "secondary"}>
@@ -211,7 +214,7 @@ export function CalendarView({ sessions, onEditSession }: CalendarViewProps) {
                 <div className="mt-2 text-sm text-gray-500">
                   <p>
                     {nextInstance 
-                      ? `${format(new Date(nextInstance.date), "PPP")} at ${nextInstance.time}`
+                      ? `${format(new Date(nextInstance.start_time), "PPP")} at ${format(new Date(nextInstance.start_time), "HH:mm")}`
                       : "No upcoming sessions"}
                   </p>
                   <p className="mt-1">Capacity: {template.capacity}</p>

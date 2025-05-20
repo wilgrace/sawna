@@ -28,6 +28,10 @@ export interface SessionTemplate {
   capacity: number
   duration_minutes: number
   is_open: boolean
+  is_recurring: boolean
+  one_off_start_time?: string
+  recurrence_start_date?: string
+  recurrence_end_date?: string
   created_at: string
   updated_at: string
   created_by: string

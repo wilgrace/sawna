@@ -5,6 +5,17 @@ import { utcToZonedTime, zonedTimeToUtc } from 'https://esm.sh/date-fns-tz@2';
 
 const SAUNA_TIMEZONE = 'Europe/London'; // IMPORTANT: Set your sauna's local timezone
 
+// Import day utilities
+const intToShortDay: Record<number, string> = {
+  0: 'sun',
+  1: 'mon',
+  2: 'tue',
+  3: 'wed',
+  4: 'thu',
+  5: 'fri',
+  6: 'sat'
+};
+
 serve(async (req) => {
   try {
     const supabaseClient = createClient(
@@ -53,7 +64,7 @@ serve(async (req) => {
 
       while (currentDate <= generationEndDate) {
         const currentDayOfWeek = getDay(currentDate);
-        const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][currentDayOfWeek];
+        const dayName = intToShortDay[currentDayOfWeek];
 
         for (const schedule of template.session_schedules) {
           if (schedule.days.includes(dayName)) {

@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { DayPicker } from "react-day-picker"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
-import { format } from "date-fns"
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
@@ -54,9 +53,6 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        CaptionLabel: ({ displayMonth }) => (
-          <span>{format(displayMonth, "MMMM yyyy")}</span>
-        ),
         PrevButton: () => <ChevronLeft className="h-4 w-4" />,
         NextButton: () => <ChevronRight className="h-4 w-4" />,
       }}

@@ -21,6 +21,8 @@ import { useUser } from "@clerk/nextjs"
 import { useAuth } from "@clerk/nextjs"
 import { createClerkUser, getClerkUser } from "@/app/actions/clerk"
 import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances } from "@/app/actions/session"
+import { mapDayStringToInt, mapIntToDayString, convertDayFormat } from "@/lib/day-utils"
+import { formatInTimeZone } from 'date-fns-tz'
 
 interface SessionFormProps {
   open: boolean
@@ -45,6 +47,8 @@ const daysOfWeek = [
   { value: "sun", label: "Sun" },
 ]
 
+const SAUNA_TIMEZONE = 'Europe/London'
+
 export function SessionForm({ open, onClose, template, onSuccess }: SessionFormProps) {
   const { toast } = useToast()
   const { user } = useUser()
@@ -52,10 +56,11 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
   const [loading, setLoading] = useState(false)
   const [date, setDate] = useState<Date | undefined>(undefined)
   const [isOpen, setIsOpen] = useState(template?.is_open ?? true)
-  const [scheduleType, setScheduleType] = useState(template?.is_recurring ? "repeat" : "repeat")
+  const [scheduleType, setScheduleType] = useState(template?.is_recurring ? "repeat" : "once")
   const [duration, setDuration] = useState(template?.duration_minutes ? 
-    `${Math.floor(template.duration_minutes / 60)}:${(template.duration_minutes % 60).toString().padStart(2, '0')}` : 
-    "01:15")
+    `${Math.floor(template.duration_minutes / 60).toString().padStart(2, '0')}:${(template.duration_minutes % 60).toString().padStart(2, '0')}` : 
+    "01:15"
+  )
   const [name, setName] = useState(template?.name || "")
   const [description, setDescription] = useState(template?.description || "")
   const [capacity, setCapacity] = useState(template?.capacity?.toString() || "10")
@@ -77,47 +82,70 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
 
   useEffect(() => {
     if (template) {
+      console.log("Template data:", {
+        one_off_start_time: template.one_off_start_time,
+        is_recurring: template.is_recurring,
+        schedules: template.schedules
+      })
+
       setName(template.name)
       setDescription(template.description || "")
       setCapacity(template.capacity.toString())
       setDuration(template.duration_minutes ? 
-        `${Math.floor(template.duration_minutes / 60)}:${(template.duration_minutes % 60).toString().padStart(2, '0')}` : 
-        "01:15")
+        `${Math.floor(template.duration_minutes / 60).toString().padStart(2, '0')}:${(template.duration_minutes % 60).toString().padStart(2, '0')}` : 
+        "01:15"
+      )
       setIsOpen(template.is_open)
-      if (template.schedules) {
-        // Map full day names to short format
-        const dayNameMap: Record<string, string> = {
-          'monday': 'mon',
-          'tuesday': 'tue',
-          'wednesday': 'wed',
-          'thursday': 'thu',
-          'friday': 'fri',
-          'saturday': 'sat',
-          'sunday': 'sun'
+      setScheduleType(template.is_recurring ? "repeat" : "once")
+      
+      if (template.is_recurring) {
+        if (template.schedules) {
+          setSchedules(template.schedules.map((s: any) => ({
+            id: s.id,
+            time: s.time,
+            days: s.days.map((day: string) => convertDayFormat(day, false))
+          })))
         }
-        
-        setSchedules(template.schedules.map((s: any) => ({
-          id: s.id,
-          time: s.time,
-          days: s.days.map((day: string) => dayNameMap[day.toLowerCase()] || day)
-        })))
-      }
-      if (template.recurrence_start_date) {
-        const startDate = parseISO(template.recurrence_start_date)
-        if (isValid(startDate)) {
-          setRecurrenceStartDate(startOfDay(startDate))
+        if (template.recurrence_start_date) {
+          const startDate = parseISO(template.recurrence_start_date)
+          if (isValid(startDate)) {
+            setRecurrenceStartDate(startOfDay(startDate))
+          }
         }
-      }
-      if (template.recurrence_end_date) {
-        const endDate = parseISO(template.recurrence_end_date)
-        if (isValid(endDate)) {
-          setRecurrenceEndDate(startOfDay(endDate))
+        if (template.recurrence_end_date) {
+          const endDate = parseISO(template.recurrence_end_date)
+          if (isValid(endDate)) {
+            setRecurrenceEndDate(startOfDay(endDate))
+          }
         }
-      }
-      if (template.one_off_start_time) {
-        const oneOffDate = parseISO(template.one_off_start_time)
-        if (isValid(oneOffDate)) {
-          setDate(startOfDay(oneOffDate))
+      } else {
+        // Handle one-off session
+        if (template.one_off_start_time) {
+          const oneOffDate = parseISO(template.one_off_start_time)
+          console.log("Parsed one-off date:", oneOffDate)
+          
+          if (isValid(oneOffDate)) {
+            const dateOnly = startOfDay(oneOffDate)
+            setDate(dateOnly)
+            // Extract time from one_off_start_time and set it in schedules
+            const timeString = format(oneOffDate, "HH:mm")
+            console.log("Extracted time string:", timeString)
+            
+            // Ensure we have a valid time string
+            if (timeString && timeString.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+              setSchedules([{ id: "1", time: timeString, days: [] }])
+              console.log("Set schedule with time:", timeString)
+            } else {
+              console.warn("Invalid time string extracted:", timeString)
+              setSchedules([{ id: "1", time: "09:00", days: [] }])
+            }
+          } else {
+            console.warn("Invalid one-off date:", template.one_off_start_time)
+            setSchedules([{ id: "1", time: "09:00", days: [] }])
+          }
+        } else {
+          console.log("No one_off_start_time found, using default")
+          setSchedules([{ id: "1", time: "09:00", days: [] }])
         }
       }
     }
@@ -206,7 +234,11 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" && date ? new Date(date.setHours(parseInt(schedules[0].time.split(':')[0]), parseInt(schedules[0].time.split(':')[1]), 0, 0)).toISOString() : null,
+          one_off_start_time: scheduleType === "once" && date ? (() => {
+            const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
+            const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0)
+            return formatInTimeZone(localDate, SAUNA_TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX")
+          })() : null,
           recurrence_start_date: scheduleType === "repeat" ? recurrenceStartDate?.toISOString() : null,
           recurrence_end_date: scheduleType === "repeat" ? recurrenceEndDate?.toISOString() : null,
         })
@@ -243,7 +275,11 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" && date ? new Date(date.setHours(parseInt(schedules[0].time.split(':')[0]), parseInt(schedules[0].time.split(':')[1]), 0, 0)).toISOString() : null,
+          one_off_start_time: scheduleType === "once" && date ? (() => {
+            const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
+            const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0)
+            return formatInTimeZone(localDate, SAUNA_TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX")
+          })() : null,
           recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? recurrenceStartDate.toISOString() : null,
           recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? recurrenceEndDate.toISOString() : null,
           created_by: user.id
@@ -261,7 +297,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         console.log("Creating single instance...")
         // Create single instance using the template's one_off_start_time
         const startTime = new Date(date)
-        const [hours, minutes] = schedules[0].time.split(':').map(Number)
+        const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
         startTime.setHours(hours, minutes, 0, 0)
         
         // Use the template's duration_minutes for consistency
@@ -285,18 +321,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         // Create recurring schedules
         const scheduleResults = await Promise.all(
           schedules.map((schedule) => {
-            // Map days to full lowercase names (Monday, etc.)
-            const dayNameMap: Record<string, string> = {
-              mon: "monday",
-              tue: "tuesday",
-              wed: "wednesday",
-              thu: "thursday",
-              fri: "friday",
-              sat: "saturday",
-              sun: "sunday",
-            }
-
-            const mappedDays = schedule.days.map(day => dayNameMap[day]);
+            const mappedDays = schedule.days.map(day => convertDayFormat(day, true));
             if (mappedDays.some(d => !d)) {
               console.error("Invalid day in schedule.days:", schedule.days);
               throw new Error("Invalid day selected in schedule.");
@@ -347,10 +372,9 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
   }
 
   const updateScheduleTime = (id: string, time: string) => {
-    // Ensure time is in HH:mm format
-    const [hours, minutes] = time.split(':').map(Number)
-    const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-    setSchedules(schedules.map((schedule) => (schedule.id === id ? { ...schedule, time: formattedTime } : schedule)))
+    setSchedules(schedules.map((schedule) => 
+      schedule.id === id ? { ...schedule, time } : schedule
+    ))
   }
 
   const toggleDay = (scheduleId: string, day: string) => {
@@ -363,6 +387,25 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         return schedule
       }),
     )
+  }
+
+  const handleScheduleTypeChange = (type: "repeat" | "once") => {
+    setScheduleType(type)
+    if (type === "once") {
+      // Initialize with a single schedule for one-off sessions
+      setSchedules([{ id: "1", time: "09:00", days: [] }])
+    } else {
+      // Initialize with default recurring schedule
+      setSchedules([{ id: "1", time: "09:00", days: ["mon", "thu", "fri"] }])
+    }
+  }
+
+  const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    // Allow partial input while typing
+    if (value === "" || value.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+      setDuration(value)
+    }
   }
 
   return (
@@ -447,7 +490,13 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                   <Label htmlFor="duration" className="text-sm font-medium">
                     Duration <span className="text-red-500">*</span>
                   </Label>
-                  <Input id="duration" type="time" value={duration} onChange={(e) => setDuration(e.target.value)} />
+                  <Input
+                    id="duration"
+                    type="time"
+                    value={duration}
+                    onChange={handleDurationChange}
+                    step="60"
+                  />
                   <p className="text-sm text-gray-500">Length of the session (hours:minutes).</p>
                 </div>
               </div>
@@ -476,7 +525,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                         "cursor-pointer border",
                         scheduleType === "repeat" ? "border-primary bg-primary/5" : "border-gray-200",
                       )}
-                      onClick={() => setScheduleType("repeat")}
+                      onClick={() => handleScheduleTypeChange("repeat")}
                     >
                       <CardContent className="p-4 flex flex-col items-center justify-center text-center">
                         {scheduleType === "repeat" && (
@@ -505,7 +554,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                         "cursor-pointer border",
                         scheduleType === "once" ? "border-primary bg-primary/5" : "border-gray-200",
                       )}
-                      onClick={() => setScheduleType("once")}
+                      onClick={() => handleScheduleTypeChange("once")}
                     >
                       <CardContent className="p-4 flex flex-col items-center justify-center text-center">
                         {scheduleType === "once" && (
@@ -551,7 +600,12 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
-                          <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                          <Calendar 
+                            mode="single" 
+                            selected={date} 
+                            onSelect={(newDate) => newDate && setDate(startOfDay(newDate))} 
+                            initialFocus 
+                          />
                         </PopoverContent>
                       </Popover>
                     </div>
@@ -559,7 +613,19 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                       <Label htmlFor="time" className="text-sm font-medium">
                         Time <span className="text-red-500">*</span>
                       </Label>
-                      <Input id="time" type="time" defaultValue={schedules[0]?.time || "14:45"} />
+                      <Input 
+                        id="time" 
+                        type="time" 
+                        value={schedules[0]?.time || "09:00"} 
+                        onChange={(e) => {
+                          const newTime = e.target.value
+                          if (schedules.length === 0) {
+                            setSchedules([{ id: "1", time: newTime, days: [] }])
+                          } else {
+                            updateScheduleTime(schedules[0].id, newTime)
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 ) : (

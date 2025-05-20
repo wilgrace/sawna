@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js"
 import { SessionTemplate, SessionSchedule } from "@/types/session"
 import { auth } from "@clerk/nextjs/server"
+import { mapDayStringToInt, mapIntToDayString } from "@/lib/day-utils"
 
 interface CreateSessionTemplateParams {
   name: string
@@ -259,17 +260,6 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       }
     }
 
-    // Convert day names to day_of_week integers
-    const dayMap: { [key: string]: number } = {
-      'sunday': 0,
-      'monday': 1,
-      'tuesday': 2,
-      'wednesday': 3,
-      'thursday': 4,
-      'friday': 5,
-      'saturday': 6
-    }
-
     // Validate time format
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
     if (!timeRegex.test(params.time)) {
@@ -281,10 +271,7 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
 
     // Create a schedule for each day
     const schedulePromises = params.days.map(async (day) => {
-      const dayOfWeek = dayMap[day.toLowerCase()]
-      if (dayOfWeek === undefined) {
-        throw new Error(`Invalid day: ${day}`)
-      }
+      const dayOfWeek = mapDayStringToInt(day)
 
       const { data, error } = await supabase
         .from("session_schedules")
@@ -446,6 +433,10 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
           capacity,
           duration_minutes,
           is_open,
+          is_recurring,
+          one_off_start_time,
+          recurrence_start_date,
+          recurrence_end_date,
           created_at,
           updated_at,
           created_by
@@ -540,8 +531,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
               updated_at: new Date().toISOString()
             }
           }
-          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-          const dayName = dayNames[schedule.day_of_week]
+          const dayName = mapIntToDayString(schedule.day_of_week, true) // Use full day names
           groups[time].days.push(dayName)
           return groups
         }, {} as Record<string, SessionSchedule>)
