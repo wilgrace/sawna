@@ -49,6 +49,34 @@ interface CreateSessionScheduleResult {
   error?: string
 }
 
+interface UpdateSessionTemplateParams {
+  id: string
+  name?: string
+  description?: string | null
+  capacity?: number
+  duration_minutes?: number
+  is_open?: boolean
+  is_recurring?: boolean
+  one_off_start_time?: string | null
+  recurrence_start_date?: string | null
+  recurrence_end_date?: string | null
+}
+
+interface UpdateSessionTemplateResult {
+  success: boolean
+  error?: string
+}
+
+interface DeleteSessionSchedulesResult {
+  success: boolean
+  error?: string
+}
+
+interface DeleteSessionInstancesResult {
+  success: boolean
+  error?: string
+}
+
 // Helper function to get authenticated user
 async function getAuthenticatedUser() {
   const { userId } = await auth()
@@ -60,16 +88,25 @@ async function getAuthenticatedUser() {
 
 // Helper function to create Supabase client
 function createSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error("Missing Supabase environment variables:", {
+      hasUrl: !!supabaseUrl,
+      hasServiceKey: !!supabaseServiceKey
+    })
+    throw new Error("Missing required Supabase environment variables")
+  }
+
+  console.log("Initializing Supabase client with URL:", supabaseUrl)
+  
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
     }
-  )
+  })
 }
 
 export async function createSessionTemplate(params: CreateSessionTemplateParams): Promise<CreateSessionTemplateResult> {
@@ -247,9 +284,9 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
         .from("session_schedules")
         .insert({
           session_template_id: params.session_template_id,
-          template_id: params.session_template_id,
-          start_time_of_day: time,
-          day_of_week: dayOfWeek
+          start_time_local: time,
+          day_of_week: dayOfWeek,
+          time
         })
         .select()
         .single()
@@ -344,77 +381,311 @@ export async function getSessionTemplates(): Promise<{ data: SessionTemplate[] |
 }
 
 export async function getSessions(): Promise<{ data: SessionTemplate[] | null; error: string | null }> {
+  console.log("=== getSessions CALLED ===");
   try {
     const userId = await getAuthenticatedUser()
-    const supabase = createSupabaseClient()
+    console.log("Authenticated user ID:", userId)
 
-    const { data, error } = await supabase
-      .from("session_templates")
-      .select(`
-        id,
-        name,
-        description,
-        capacity,
-        duration_minutes,
-        is_open,
-        created_at,
-        updated_at,
-        created_by,
-        schedules:session_schedules!session_template_id (
+    let supabase
+    try {
+      supabase = createSupabaseClient()
+      console.log("Supabase client created successfully")
+    } catch (error) {
+      console.error("Failed to create Supabase client:", error)
+      return { 
+        data: null, 
+        error: "Failed to initialize database connection" 
+      }
+    }
+
+    // Try a very simple query first
+    try {
+      const { data: simpleData, error: simpleError } = await supabase
+        .from('session_templates')
+        .select('id, name')
+        .limit(1)
+      
+      console.log("Simple query result:", { 
+        data: simpleData, 
+        error: simpleError,
+        hasData: !!simpleData,
+        dataLength: simpleData?.length
+      })
+      
+      if (simpleError) {
+        console.error("Simple query error:", {
+          message: simpleError.message,
+          details: simpleError.details,
+          hint: simpleError.hint,
+          code: simpleError.code,
+          error: simpleError
+        })
+        return { data: null, error: `Simple query failed: ${simpleError.message}` }
+      }
+    } catch (simpleError) {
+      console.error("Simple query caught error:", simpleError)
+      return { data: null, error: `Simple query error: ${simpleError instanceof Error ? simpleError.message : 'Unknown error'}` }
+    }
+
+    // If simple query succeeds, try the full query
+    try {
+      console.log("Attempting full query...")
+      
+      // First, get the templates
+      const { data: templates, error: templatesError } = await supabase
+        .from("session_templates")
+        .select(`
           id,
-          start_time_of_day,
-          day_of_week
-        ),
-        instances:session_instances!template_id (
+          name,
+          description,
+          capacity,
+          duration_minutes,
+          is_open,
+          created_at,
+          updated_at,
+          created_by
+        `)
+        .order("created_at", { ascending: false })
+
+      if (templatesError) {
+        console.error("Templates query error:", templatesError)
+        return { data: null, error: `Templates query failed: ${templatesError.message}` }
+      }
+
+      console.log("Templates query successful:", { 
+        count: templates?.length,
+        firstTemplate: templates?.[0]
+      })
+
+      if (!templates || templates.length === 0) {
+        return { data: [], error: null }
+      }
+
+      // Then, get the schedules for each template
+      const templateIds = templates.map(t => t.id)
+      console.log("Querying schedules for template IDs:", templateIds)
+      
+      const { data: schedules, error: schedulesError } = await supabase
+        .from("session_schedules")
+        .select(`
           id,
+          session_template_id,
+          start_time_local,
+          day_of_week,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .in('session_template_id', templateIds)
+
+      if (schedulesError) {
+        console.error("Schedules query error details:", {
+          message: schedulesError.message,
+          details: schedulesError.details,
+          hint: schedulesError.hint,
+          code: schedulesError.code,
+          error: schedulesError
+        })
+        return { data: null, error: `Schedules query failed: ${schedulesError.message}` }
+      }
+
+      console.log("Raw schedules data:", schedules)
+
+      // If no schedules exist, that's okay - just use an empty array
+      const schedulesList = schedules || []
+
+      // Finally, get the instances
+      const { data: instances, error: instancesError } = await supabase
+        .from("session_instances")
+        .select(`
+          id,
+          template_id,
           start_time,
           end_time,
           status
-        )
-      `)
-      .order("created_at", { ascending: false })
+        `)
+        .in('template_id', templateIds)
 
-    if (error) {
-      console.error("Error fetching sessions:", error)
-      return { data: null, error: error.message }
-    }
+      if (instancesError) {
+        console.error("Instances query error:", instancesError)
+        return { data: null, error: `Instances query failed: ${instancesError.message}` }
+      }
 
-    // Transform the data to match SessionTemplate type
-    const transformedData = data?.map(template => ({
-      ...template,
-      schedules: template.schedules?.map(schedule => {
-        // Convert day_of_week (0-6) to day name
-        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-        const dayName = dayNames[schedule.day_of_week]
+      console.log("Instances query successful:", {
+        count: instances?.length,
+        firstInstance: instances?.[0]
+      })
 
-        // Format time from HH:mm:ss to HH:mm
-        const time = schedule.start_time_of_day.substring(0, 5)
+      // Combine the data
+      const transformedData = templates.map(template => {
+        const templateSchedules = schedulesList.filter(s => s.session_template_id === template.id)
+        const templateInstances = instances?.filter(i => i.template_id === template.id) || []
 
         return {
-          id: schedule.id,
-          time,
-          days: [dayName],
-          session_id: template.id,
-          is_recurring: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      }) || [],
-      instances: template.instances?.map(instance => ({
-        id: instance.id,
-        start_time: instance.start_time,
-        end_time: instance.end_time,
-        status: instance.status,
-        template_id: template.id
-      })) || []
-    })) || []
+          ...template,
+          schedules: templateSchedules.map(schedule => {
+            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const dayOfWeek = schedule.day_of_week
+            const dayName = dayNames[dayOfWeek]
+            const time = schedule.start_time_local?.substring(0, 5)
 
-    return { data: transformedData, error: null }
+            return {
+              id: schedule.id,
+              time,
+              days: [dayName],
+              session_id: template.id,
+              is_recurring: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }
+          }),
+          instances: templateInstances.map(instance => ({
+            id: instance.id,
+            start_time: instance.start_time,
+            end_time: instance.end_time,
+            status: instance.status,
+            template_id: template.id
+          }))
+        }
+      })
+
+      console.log("Transformed data:", {
+        count: transformedData.length,
+        firstTemplate: transformedData[0]
+      })
+
+      return { data: transformedData, error: null }
+    } catch (queryError) {
+      console.error("Full query caught error:", queryError)
+      return { 
+        data: null, 
+        error: `Query error: ${queryError instanceof Error ? queryError.message : 'Unknown error'}` 
+      }
+    }
   } catch (error) {
-    console.error("Error in getSessions:", error)
+    console.error("Error in getSessions:", {
+      error,
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined
+    })
     return { 
       data: null, 
       error: error instanceof Error ? error.message : "Unknown error occurred" 
     }
+  }
+}
+
+export async function updateSessionTemplate(params: UpdateSessionTemplateParams): Promise<UpdateSessionTemplateResult> {
+  try {
+    const userId = await getAuthenticatedUser()
+    const supabase = createSupabaseClient()
+
+    // Only allow update if the user is the creator
+    const { data: template, error: fetchError } = await supabase
+      .from("session_templates")
+      .select("created_by")
+      .eq("id", params.id)
+      .single()
+
+    if (fetchError || !template) {
+      return { success: false, error: "Template not found" }
+    }
+    if (template.created_by !== userId) {
+      return { success: false, error: "Unauthorized: You can only update your own templates" }
+    }
+
+    // Remove id from update fields
+    const id = params.id;
+    const updateFields = { ...params };
+    delete (updateFields as any).id;
+    (updateFields as any)["updated_at"] = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("session_templates")
+      .update(updateFields)
+      .eq("id", id)
+
+    if (error) {
+      console.error("Error updating session template:", error)
+      return { success: false, error: error.message }
+    }
+    return { success: true }
+  } catch (error) {
+    console.error("Error in updateSessionTemplate:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
+  }
+}
+
+export async function deleteSessionSchedules(templateId: string): Promise<DeleteSessionSchedulesResult> {
+  try {
+    const userId = await getAuthenticatedUser()
+    const supabase = createSupabaseClient()
+
+    // Verify the user owns the template
+    const { data: template, error: templateError } = await supabase
+      .from("session_templates")
+      .select("created_by")
+      .eq("id", templateId)
+      .single()
+
+    if (templateError || !template) {
+      return { success: false, error: "Template not found" }
+    }
+
+    if (template.created_by !== userId) {
+      return { success: false, error: "Unauthorized: You can only delete schedules for your own templates" }
+    }
+
+    const { error } = await supabase
+      .from("session_schedules")
+      .delete()
+      .eq("session_template_id", templateId)
+
+    if (error) {
+      console.error("Error deleting schedules:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in deleteSessionSchedules:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
+  }
+}
+
+export async function deleteSessionInstances(templateId: string): Promise<DeleteSessionInstancesResult> {
+  try {
+    const userId = await getAuthenticatedUser()
+    const supabase = createSupabaseClient()
+
+    // Verify the user owns the template
+    const { data: template, error: templateError } = await supabase
+      .from("session_templates")
+      .select("created_by")
+      .eq("id", templateId)
+      .single()
+
+    if (templateError || !template) {
+      return { success: false, error: "Template not found" }
+    }
+
+    if (template.created_by !== userId) {
+      return { success: false, error: "Unauthorized: You can only delete instances for your own templates" }
+    }
+
+    const { error } = await supabase
+      .from("session_instances")
+      .delete()
+      .eq("template_id", templateId)
+
+    if (error) {
+      console.error("Error deleting instances:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in deleteSessionInstances:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
   }
 } 

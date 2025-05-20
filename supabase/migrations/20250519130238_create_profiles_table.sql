@@ -1,65 +1,46 @@
 -- Create profiles table
-CREATE TABLE "public"."profiles" (
-    "id" TEXT NOT NULL PRIMARY KEY, -- Stores Clerk User ID
-    "email" TEXT NOT NULL,
-    "first_name" TEXT,
-    "last_name" TEXT,
-    "organization_id" UUID REFERENCES "public"."organizations"("id") ON DELETE SET NULL,
-    "is_super_admin" BOOLEAN NOT NULL DEFAULT false,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS "public"."profiles" (
+    "id" text NOT NULL,
+    "email" text NOT NULL,
+    "first_name" text,
+    "last_name" text,
+    "organization_id" uuid,
+    "created_at" timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT "profiles_pkey" PRIMARY KEY ("id")
 );
-
--- Add indexes
-CREATE INDEX "idx_profiles_email" ON "public"."profiles" ("email");
-CREATE INDEX "idx_profiles_organization_id" ON "public"."profiles" ("organization_id");
 
 -- Add RLS policies
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
--- Allow users to read their own profile
-CREATE POLICY "Users can view own profile"
+CREATE POLICY "Enable read access for authenticated users"
 ON "public"."profiles"
+AS PERMISSIVE
 FOR SELECT
 TO authenticated
-USING (id = auth.uid()::text);
+USING (true);
 
--- Allow users to update their own profile
-CREATE POLICY "Users can update own profile"
+CREATE POLICY "Enable insert for authenticated users"
 ON "public"."profiles"
+AS PERMISSIVE
+FOR INSERT
+TO authenticated
+WITH CHECK (id = auth.uid()::text);
+
+CREATE POLICY "Enable update for users based on id"
+ON "public"."profiles"
+AS PERMISSIVE
 FOR UPDATE
 TO authenticated
 USING (id = auth.uid()::text)
 WITH CHECK (id = auth.uid()::text);
 
--- Allow super admins to read all profiles
-CREATE POLICY "Super admins can view all profiles"
-ON "public"."profiles"
-FOR SELECT
-TO authenticated
-USING (
-    EXISTS (
-        SELECT 1 FROM "public"."profiles"
-        WHERE id = auth.uid()::text
-        AND is_super_admin = true
-    )
-);
+-- Add foreign key to organizations
+ALTER TABLE "public"."profiles"
+    ADD CONSTRAINT "profiles_organization_id_fkey" 
+    FOREIGN KEY ("organization_id") 
+    REFERENCES "public"."organizations"("id") 
+    ON DELETE SET NULL;
 
--- Create function to handle profile updates
-CREATE OR REPLACE FUNCTION "public"."handle_profile_update"()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trigger for profile updates
-CREATE TRIGGER "on_profile_update"
-    BEFORE UPDATE ON "public"."profiles"
-    FOR EACH ROW
-    EXECUTE FUNCTION "public"."handle_profile_update"();
-
--- Grant necessary permissions
-GRANT ALL ON "public"."profiles" TO authenticated;
-GRANT USAGE ON SCHEMA public TO authenticated; 
+-- Add comment
+COMMENT ON TABLE "public"."profiles" IS 'Stores app-specific user data, populated by Clerk webhooks'; 

@@ -20,7 +20,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useUser } from "@clerk/nextjs"
 import { useAuth } from "@clerk/nextjs"
 import { createClerkUser, getClerkUser } from "@/app/actions/clerk"
-import { createSessionTemplate, createSessionInstance, createSessionSchedule } from "@/app/actions/session"
+import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances } from "@/app/actions/session"
 
 interface SessionFormProps {
   open: boolean
@@ -186,51 +186,40 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
 
       if (template) {
         console.log("Updating existing template...")
-        // Update existing template
-        const { error: templateError } = await supabase
-          .from("session_templates")
-          .update({
-            name,
-            description,
-            capacity: parseInt(capacity),
-            duration_minutes: durationMinutes,
-            is_open: isOpen,
-            is_recurring: scheduleType === "repeat",
-            one_off_start_time: scheduleType === "once" ? date?.toISOString() : null,
-            recurrence_start_date: scheduleType === "repeat" ? recurrenceStartDate?.toISOString() : null,
-            recurrence_end_date: scheduleType === "repeat" ? recurrenceEndDate?.toISOString() : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", template.id)
+        // Update existing template using server action
+        const result = await updateSessionTemplate({
+          id: template.id,
+          name,
+          description,
+          capacity: parseInt(capacity),
+          duration_minutes: durationMinutes,
+          is_open: isOpen,
+          is_recurring: scheduleType === "repeat",
+          one_off_start_time: scheduleType === "once" ? date?.toISOString() : null,
+          recurrence_start_date: scheduleType === "repeat" ? recurrenceStartDate?.toISOString() : null,
+          recurrence_end_date: scheduleType === "repeat" ? recurrenceEndDate?.toISOString() : null,
+        })
 
-        if (templateError) {
-          console.error("Error updating template:", templateError)
-          throw templateError
+        if (!result.success) {
+          console.error("Error updating template:", result.error)
+          throw new Error(result.error || "Failed to update template")
         }
 
         templateId = template.id
 
-        // Delete existing schedules
-        const { error: deleteError } = await supabase
-          .from("session_schedules")
-          .delete()
-          .eq("template_id", template.id)
-
-        if (deleteError) {
-          console.error("Error deleting schedules:", deleteError)
-          throw deleteError
+        // Delete existing schedules using server action
+        const deleteSchedulesResult = await deleteSessionSchedules(template.id)
+        if (!deleteSchedulesResult.success) {
+          console.error("Error deleting schedules:", deleteSchedulesResult.error)
+          throw new Error(deleteSchedulesResult.error || "Failed to delete schedules")
         }
 
         // Delete existing instances if switching to recurring
         if (scheduleType === "repeat") {
-          const { error: deleteInstancesError } = await supabase
-            .from("session_instances")
-            .delete()
-            .eq("template_id", template.id)
-
-          if (deleteInstancesError) {
-            console.error("Error deleting instances:", deleteInstancesError)
-            throw deleteInstancesError
+          const deleteInstancesResult = await deleteSessionInstances(template.id)
+          if (!deleteInstancesResult.success) {
+            console.error("Error deleting instances:", deleteInstancesResult.error)
+            throw new Error(deleteInstancesResult.error || "Failed to delete instances")
           }
         }
       } else {
@@ -246,7 +235,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           one_off_start_time: scheduleType === "once" && date ? date.toISOString() : null,
           recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? recurrenceStartDate.toISOString() : null,
           recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? recurrenceEndDate.toISOString() : null,
-          created_by: clerkUserId
+          created_by: user.id
         })
 
         if (!result.success || !result.id) {
@@ -286,13 +275,30 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
             // Parse the time
             const [hours, minutes] = schedule.time.split(':').map(Number)
 
-            // Format the time as HH:mm
-            const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+            // Format the time as HH:mm:ss
+            const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
+
+            // Map days to full lowercase names (Monday, etc.)
+            const dayNameMap: Record<string, string> = {
+              mon: "monday",
+              tue: "tuesday",
+              wed: "wednesday",
+              thu: "thursday",
+              fri: "friday",
+              sat: "saturday",
+              sun: "sunday",
+            }
+
+            const mappedDays = schedule.days.map(day => dayNameMap[day]);
+            if (mappedDays.some(d => !d)) {
+              console.error("Invalid day in schedule.days:", schedule.days);
+              throw new Error("Invalid day selected in schedule.");
+            }
 
             return createSessionSchedule({
               session_template_id: templateId,
               time: formattedTime,
-              days: schedule.days,
+              days: mappedDays,
               start_time_local: formattedTime
             })
           })
