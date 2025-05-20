@@ -137,29 +137,28 @@ Deno.serve(async (req) => {
            return new Response('Webhook Error: User created without primary email', { status: 400 });
         }
     
-        // Check if user already exists (idempotency)
-        const { data: existingUser, error: checkError } = await supabaseAdmin
-          .from('clerk_users')
+        // Check if profile already exists
+        const { data: existingProfile, error: checkError } = await supabaseAdmin
+          .from('profiles')
           .select('id')
-          .eq('clerk_user_id', userData.id)
+          .eq('id', userData.id)
           .maybeSingle();
     
         if (checkError) {
-           console.error('Error checking for existing user:', checkError);
+           console.error('Error checking for existing profile:', checkError);
            throw checkError;
         }
     
-        if (existingUser) {
-          console.log('User already exists in DB, skipping creation for Clerk ID:', userData.id);
+        if (existingProfile) {
+          console.log('Profile already exists in DB, skipping creation for Clerk ID:', userData.id);
           break;
         }
     
-        // === MODIFIED INSERT STATEMENT ===
-        console.log(`Assigning default organization ID: ${defaultOrgIdFromEnv} to new user ${userData.id}`);
+        // Create new profile
         const { error: insertError } = await supabaseAdmin
-          .from('clerk_users')
+          .from('profiles')
           .insert({
-             clerk_user_id: userData.id,
+             id: userData.id,
              email: primaryEmail,
              first_name: userData.first_name,
              last_name: userData.last_name,
@@ -168,10 +167,10 @@ Deno.serve(async (req) => {
         // === END MODIFIED INSERT ===
     
         if (insertError) {
-          console.error('Error inserting user:', insertError);
+          console.error('Error inserting profile:', insertError);
           throw insertError;
         }
-        console.log('Successfully inserted user for Clerk ID:', userData.id, 'with default organization.');
+        console.log('Successfully inserted profile for Clerk ID:', userData.id);
         break;
       } // End case 'user.created'
 
@@ -196,20 +195,20 @@ Deno.serve(async (req) => {
 
 
         const { error: updateError } = await supabaseAdmin
-          .from('clerk_users')
+          .from('profiles')
           .update(updateData)
-          .eq('clerk_user_id', userData.id); // Match using clerk_user_id
+          .eq('id', userData.id); // Match using clerk_user_id
 
         if (updateError) {
-          console.error('Error updating user:', updateError);
+          console.error('Error updating profile:', updateError);
           // Don't throw if user not found (e.g., maybe deleted before update processed)
           if (updateError.code !== 'PGRST116') { // PGRST116: JSON object requested, multiple (or no) rows returned
              throw updateError;
           } else {
-             console.warn('User not found for update (Clerk ID:', userData.id, '), possibly already deleted.');
+             console.warn('Profile not found for update (Clerk ID:', userData.id, '), possibly already deleted.');
           }
         } else {
-            console.log('Successfully updated user for Clerk ID:', userData.id);
+            console.log('Successfully updated profile for Clerk ID:', userData.id);
         }
         break;
       }
@@ -224,25 +223,25 @@ Deno.serve(async (req) => {
         // Consider a soft delete (setting an `is_active` flag or `deleted_at` timestamp)
         // on the `users` table instead, which requires schema changes.
         const { error: deleteError } = await supabaseAdmin
-          .from('clerk_users')
+          .from('profiles')
           .delete()
-          .eq('clerk_user_id', userData.id); // Match using clerk_user_id
+          .eq('id', userData.id); // Match using clerk_user_id
 
         if (deleteError) {
             // Log specific constraint violation errors differently
             if (deleteError.code === '23503') { // foreign_key_violation
-                 console.error(`Cannot delete user (Clerk ID: ${userData.id}) due to existing related records (foreign key violation). Consider soft delete. Error: ${deleteError.message}`);
+                 console.error(`Cannot delete profile (Clerk ID: ${userData.id}) due to existing related records (foreign key violation). Consider soft delete. Error: ${deleteError.message}`);
                  // Return 200 OK here? Or 409 Conflict? Let's return 409
-                 return new Response('Conflict: User cannot be deleted due to existing references', { status: 409 });
+                 return new Response('Conflict: Profile cannot be deleted due to existing references', { status: 409 });
             } else if (deleteError.code !== 'PGRST116') { // Ignore 'user not found'
-              console.error('Error deleting user:', deleteError);
+              console.error('Error deleting profile:', deleteError);
               throw deleteError;
             } else {
-                 console.warn('User not found for deletion (Clerk ID:', userData.id, '), possibly already deleted.');
+                 console.warn('Profile not found for deletion (Clerk ID:', userData.id, '), possibly already deleted.');
             }
 
         } else {
-             console.log('Successfully deleted user for Clerk ID:', userData.id);
+             console.log('Successfully deleted profile for Clerk ID:', userData.id);
         }
         // --- End Hard Delete Warning ---
 
@@ -279,13 +278,12 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
-    // --- 6. Handle Errors During Processing ---
+  } catch (error: any) {
     console.error('Error processing webhook event:', error);
     return new Response(`Webhook Processing Error: ${error.message}`, {
-      status: 500, // Use 500 for server-side processing errors
+      status: 500,
       headers: { ...corsHeaders },
-     });
+    });
   }
 });
 
