@@ -15,7 +15,7 @@ ALTER TABLE session_templates
 
 ALTER TABLE session_schedules
   ALTER COLUMN session_template_id SET NOT NULL,
-  ALTER COLUMN start_time_of_day SET NOT NULL,
+  -- ALTER COLUMN start_time_of_day SET NOT NULL, -- commented out, column does not exist
   ALTER COLUMN day_of_week SET NOT NULL;
 
 ALTER TABLE session_instances

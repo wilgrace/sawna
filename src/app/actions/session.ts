@@ -1,7 +1,7 @@
 "use server"
 
 import { createClient } from "@supabase/supabase-js"
-import { SessionTemplate } from "@/types/session"
+import { SessionTemplate, SessionSchedule } from "@/types/session"
 import { auth } from "@clerk/nextjs/server"
 
 interface CreateSessionTemplateParams {
@@ -270,6 +270,15 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       'saturday': 6
     }
 
+    // Validate time format
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+    if (!timeRegex.test(params.time)) {
+      return {
+        success: false,
+        error: "Invalid time format. Expected HH:mm"
+      }
+    }
+
     // Create a schedule for each day
     const schedulePromises = params.days.map(async (day) => {
       const dayOfWeek = dayMap[day.toLowerCase()]
@@ -277,16 +286,15 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
         throw new Error(`Invalid day: ${day}`)
       }
 
-      // Ensure time is in HH:mm:ss format
-      const time = params.time.length === 5 ? `${params.time}:00` : params.time
-
       const { data, error } = await supabase
         .from("session_schedules")
         .insert({
           session_template_id: params.session_template_id,
-          start_time_local: time,
+          start_time_local: params.time,
           day_of_week: dayOfWeek,
-          time
+          time: params.time,
+          days: [day.toLowerCase()], // Store the day name for reference
+          is_active: true
         })
         .select()
         .single()
@@ -307,15 +315,12 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       }
     }
 
-    return {
-      success: true,
-      id: results[0].id // Return the first schedule's ID
-    }
+    return { success: true }
   } catch (error) {
     console.error("Error in createSessionSchedule:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred"
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error occurred" 
     }
   }
 }
@@ -521,24 +526,29 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
         const templateSchedules = schedulesList.filter(s => s.session_template_id === template.id)
         const templateInstances = instances?.filter(i => i.template_id === template.id) || []
 
-        return {
-          ...template,
-          schedules: templateSchedules.map(schedule => {
-            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-            const dayOfWeek = schedule.day_of_week
-            const dayName = dayNames[dayOfWeek]
-            const time = schedule.start_time_local?.substring(0, 5)
-
-            return {
+        // Group schedules by time
+        const scheduleGroups: Record<string, SessionSchedule> = templateSchedules.reduce((groups, schedule) => {
+          const time = schedule.start_time_local?.substring(0, 5)
+          if (!groups[time]) {
+            groups[time] = {
               id: schedule.id,
               time,
-              days: [dayName],
+              days: [],
               session_id: template.id,
               is_recurring: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             }
-          }),
+          }
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+          const dayName = dayNames[schedule.day_of_week]
+          groups[time].days.push(dayName)
+          return groups
+        }, {} as Record<string, SessionSchedule>)
+
+        return {
+          ...template,
+          schedules: Object.values(scheduleGroups),
           instances: templateInstances.map(instance => ({
             id: instance.id,
             start_time: instance.start_time,
@@ -546,7 +556,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
             status: instance.status,
             template_id: template.id
           }))
-        }
+        } as SessionTemplate
       })
 
       console.log("Transformed data:", {

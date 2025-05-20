@@ -85,10 +85,21 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         "01:15")
       setIsOpen(template.is_open)
       if (template.schedules) {
+        // Map full day names to short format
+        const dayNameMap: Record<string, string> = {
+          'monday': 'mon',
+          'tuesday': 'tue',
+          'wednesday': 'wed',
+          'thursday': 'thu',
+          'friday': 'fri',
+          'saturday': 'sat',
+          'sunday': 'sun'
+        }
+        
         setSchedules(template.schedules.map((s: any) => ({
           id: s.id,
           time: s.time,
-          days: s.days
+          days: s.days.map((day: string) => dayNameMap[day.toLowerCase()] || day)
         })))
       }
       if (template.recurrence_start_date) {
@@ -122,7 +133,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
       }
 
       // Get the Clerk session token
-      const token = await getToken()
+      const token = await getToken({ template: 'supabase' })
       if (!token) {
         throw new Error("Failed to get authentication token")
       }
@@ -195,7 +206,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" ? date?.toISOString() : null,
+          one_off_start_time: scheduleType === "once" && date ? new Date(date.setHours(parseInt(schedules[0].time.split(':')[0]), parseInt(schedules[0].time.split(':')[1]), 0, 0)).toISOString() : null,
           recurrence_start_date: scheduleType === "repeat" ? recurrenceStartDate?.toISOString() : null,
           recurrence_end_date: scheduleType === "repeat" ? recurrenceEndDate?.toISOString() : null,
         })
@@ -232,7 +243,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" && date ? date.toISOString() : null,
+          one_off_start_time: scheduleType === "once" && date ? new Date(date.setHours(parseInt(schedules[0].time.split(':')[0]), parseInt(schedules[0].time.split(':')[1]), 0, 0)).toISOString() : null,
           recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? recurrenceStartDate.toISOString() : null,
           recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? recurrenceEndDate.toISOString() : null,
           created_by: user.id
@@ -248,14 +259,16 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
 
       if (scheduleType === "once" && date) {
         console.log("Creating single instance...")
-        // Create single instance
+        // Create single instance using the template's one_off_start_time
         const startTime = new Date(date)
         const [hours, minutes] = schedules[0].time.split(':').map(Number)
         startTime.setHours(hours, minutes, 0, 0)
         
+        // Use the template's duration_minutes for consistency
         const endTime = new Date(startTime)
         endTime.setMinutes(endTime.getMinutes() + durationMinutes)
 
+        // Create the instance with the calculated times
         const instanceResult = await createSessionInstance({
           template_id: templateId,
           start_time: startTime.toISOString(),
@@ -272,12 +285,6 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         // Create recurring schedules
         const scheduleResults = await Promise.all(
           schedules.map((schedule) => {
-            // Parse the time
-            const [hours, minutes] = schedule.time.split(':').map(Number)
-
-            // Format the time as HH:mm:ss
-            const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
-
             // Map days to full lowercase names (Monday, etc.)
             const dayNameMap: Record<string, string> = {
               mon: "monday",
@@ -297,9 +304,9 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
 
             return createSessionSchedule({
               session_template_id: templateId,
-              time: formattedTime,
+              time: schedule.time,
               days: mappedDays,
-              start_time_local: formattedTime
+              start_time_local: schedule.time
             })
           })
         )
@@ -340,7 +347,10 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
   }
 
   const updateScheduleTime = (id: string, time: string) => {
-    setSchedules(schedules.map((schedule) => (schedule.id === id ? { ...schedule, time } : schedule)))
+    // Ensure time is in HH:mm format
+    const [hours, minutes] = time.split(':').map(Number)
+    const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+    setSchedules(schedules.map((schedule) => (schedule.id === id ? { ...schedule, time: formattedTime } : schedule)))
   }
 
   const toggleDay = (scheduleId: string, day: string) => {
