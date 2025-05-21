@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { LayoutGrid, List } from "lucide-react"
 import { useCalendarView } from "@/hooks/use-calendar-view"
+import { CalendarView } from "@/components/admin/calendar-view"
 
 export function Header() {
   const pathname = usePathname()
@@ -15,8 +16,8 @@ export function Header() {
     console.log('Current pathname:', pathname)
     
     if (pathname === "/admin/home") return "Home"
-    if (pathname === "/admin/calendar") return "Calendar"
     if (pathname === "/admin/users") return "Users"
+    if (pathname === "/admin/calendar") return "Calendar"
     if (pathname.startsWith("/settings")) {
       if (pathname === "/settings/general") return "General Settings"
       if (pathname === "/settings/pricing") return "Pricing Settings"
@@ -30,9 +31,22 @@ export function Header() {
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Calendar</h1>
-
-      
+        <h1 className="text-2xl font-semibold text-gray-900">{getPageTitle()}</h1>
+        {pathname === "/admin/calendar" && (
+          <div className="flex items-center gap-2">
+            <CalendarView.Toggle />
+            <Button
+              onClick={() => {
+                // This will be handled by the calendar page
+                const event = new CustomEvent('openSessionForm')
+                window.dispatchEvent(event)
+              }}
+              className="bg-primary"
+            >
+              New Session
+            </Button>
+          </div>
+        )}
       </div>
     </header>
   )

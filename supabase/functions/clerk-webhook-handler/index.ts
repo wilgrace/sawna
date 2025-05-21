@@ -137,40 +137,39 @@ Deno.serve(async (req) => {
            return new Response('Webhook Error: User created without primary email', { status: 400 });
         }
     
-        // Check if profile already exists
-        const { data: existingProfile, error: checkError } = await supabaseAdmin
-          .from('profiles')
+        // Check if clerk user already exists
+        const { data: existingUser, error: checkError } = await supabaseAdmin
+          .from('clerk_users')
           .select('id')
-          .eq('id', userData.id)
+          .eq('clerk_user_id', userData.id)
           .maybeSingle();
     
         if (checkError) {
-           console.error('Error checking for existing profile:', checkError);
+           console.error('Error checking for existing clerk user:', checkError);
            throw checkError;
         }
     
-        if (existingProfile) {
-          console.log('Profile already exists in DB, skipping creation for Clerk ID:', userData.id);
+        if (existingUser) {
+          console.log('Clerk user already exists in DB, skipping creation for Clerk ID:', userData.id);
           break;
         }
     
-        // Create new profile
+        // Create new clerk user
         const { error: insertError } = await supabaseAdmin
-          .from('profiles')
+          .from('clerk_users')
           .insert({
-             id: userData.id,
+             clerk_user_id: userData.id,
              email: primaryEmail,
              first_name: userData.first_name,
              last_name: userData.last_name,
              organization_id: defaultOrgIdFromEnv
           });
-        // === END MODIFIED INSERT ===
     
         if (insertError) {
-          console.error('Error inserting profile:', insertError);
+          console.error('Error inserting clerk user:', insertError);
           throw insertError;
         }
-        console.log('Successfully inserted profile for Clerk ID:', userData.id);
+        console.log('Successfully inserted clerk user for Clerk ID:', userData.id);
         break;
       } // End case 'user.created'
 
@@ -195,20 +194,20 @@ Deno.serve(async (req) => {
 
 
         const { error: updateError } = await supabaseAdmin
-          .from('profiles')
+          .from('clerk_users')
           .update(updateData)
-          .eq('id', userData.id); // Match using clerk_user_id
+          .eq('clerk_user_id', userData.id);
 
         if (updateError) {
-          console.error('Error updating profile:', updateError);
+          console.error('Error updating clerk user:', updateError);
           // Don't throw if user not found (e.g., maybe deleted before update processed)
           if (updateError.code !== 'PGRST116') { // PGRST116: JSON object requested, multiple (or no) rows returned
              throw updateError;
           } else {
-             console.warn('Profile not found for update (Clerk ID:', userData.id, '), possibly already deleted.');
+             console.warn('Clerk user not found for update (Clerk ID:', userData.id, '), possibly already deleted.');
           }
         } else {
-            console.log('Successfully updated profile for Clerk ID:', userData.id);
+            console.log('Successfully updated clerk user for Clerk ID:', userData.id);
         }
         break;
       }
@@ -223,46 +222,26 @@ Deno.serve(async (req) => {
         // Consider a soft delete (setting an `is_active` flag or `deleted_at` timestamp)
         // on the `users` table instead, which requires schema changes.
         const { error: deleteError } = await supabaseAdmin
-          .from('profiles')
+          .from('clerk_users')
           .delete()
-          .eq('id', userData.id); // Match using clerk_user_id
+          .eq('clerk_user_id', userData.id);
 
         if (deleteError) {
             // Log specific constraint violation errors differently
             if (deleteError.code === '23503') { // foreign_key_violation
-                 console.error(`Cannot delete profile (Clerk ID: ${userData.id}) due to existing related records (foreign key violation). Consider soft delete. Error: ${deleteError.message}`);
+                 console.error(`Cannot delete clerk user (Clerk ID: ${userData.id}) due to existing related records (foreign key violation). Consider soft delete. Error: ${deleteError.message}`);
                  // Return 200 OK here? Or 409 Conflict? Let's return 409
-                 return new Response('Conflict: Profile cannot be deleted due to existing references', { status: 409 });
+                 return new Response('Conflict: Clerk user cannot be deleted due to existing references', { status: 409 });
             } else if (deleteError.code !== 'PGRST116') { // Ignore 'user not found'
-              console.error('Error deleting profile:', deleteError);
+              console.error('Error deleting clerk user:', deleteError);
               throw deleteError;
             } else {
-                 console.warn('Profile not found for deletion (Clerk ID:', userData.id, '), possibly already deleted.');
+                 console.warn('Clerk user not found for deletion (Clerk ID:', userData.id, '), possibly already deleted.');
             }
 
         } else {
-             console.log('Successfully deleted profile for Clerk ID:', userData.id);
+             console.log('Successfully deleted clerk user for Clerk ID:', userData.id);
         }
-        // --- End Hard Delete Warning ---
-
-        // --- Example: Soft Delete (Requires `deleted_at` timestamp column) ---
-        /*
-        const { error: softDeleteError } = await supabaseAdmin
-           .from('users')
-           .update({ deleted_at: new Date().toISOString() })
-           .eq('clerk_user_id', userData.id);
-
-         if (softDeleteError && softDeleteError.code !== 'PGRST116') {
-            console.error('Error soft-deleting user:', softDeleteError);
-            throw softDeleteError;
-         } else if (!softDeleteError) {
-            console.log('Successfully soft-deleted user for Clerk ID:', userData.id);
-         } else {
-            console.warn('User not found for soft deletion (Clerk ID:', userData.id, '), possibly already deleted.');
-         }
-        */
-        // --- End Soft Delete Example ---
-
         break;
       }
 

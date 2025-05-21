@@ -1,6 +1,7 @@
 "use client"
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 type CalendarView = "list" | "calendar"
 
@@ -9,7 +10,14 @@ interface CalendarViewStore {
   setView: (view: CalendarView) => void
 }
 
-export const useCalendarView = create<CalendarViewStore>((set) => ({
-  view: "list",
-  setView: (view) => set({ view }),
-}))
+export const useCalendarView = create<CalendarViewStore>()(
+  persist(
+    (set) => ({
+      view: "calendar",
+      setView: (view) => set({ view }),
+    }),
+    {
+      name: 'calendar-view',
+    }
+  )
+)

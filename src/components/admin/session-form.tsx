@@ -20,15 +20,47 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useUser } from "@clerk/nextjs"
 import { useAuth } from "@clerk/nextjs"
 import { createClerkUser, getClerkUser } from "@/app/actions/clerk"
-import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances } from "@/app/actions/session"
-import { mapDayStringToInt, mapIntToDayString, convertDayFormat } from "@/lib/day-utils"
+import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances, deleteSessionTemplate } from "@/app/actions/session"
+import { mapDayStringToInt, mapIntToDayString, convertDayFormat, isValidDayString } from "@/lib/day-utils"
 import { formatInTimeZone } from 'date-fns-tz'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
+import { SessionTemplate } from "@/types/session"
+
+async function generateInstances() {
+  try {
+    console.log("Starting instance generation...")
+    const response = await fetch('/functions/v1/generate-instances', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to generate instances:', {
+        status: response.status,
+        statusText: response.statusText
+      })
+      // Don't throw, just log the warning
+      return
+    }
+    
+    const result = await response.json()
+    console.log("Instance generation response:", result)
+    return result
+  } catch (error) {
+    console.error('Error generating instances:', error)
+    // Don't throw, just log the warning
+    return
+  }
+}
 
 interface SessionFormProps {
   open: boolean
   onClose: () => void
-  template?: any
-  onSuccess?: () => void
+  template: SessionTemplate | null
+  initialTimeSlot?: { start: Date; end: Date } | null
+  onSuccess: () => void
 }
 
 interface ScheduleItem {
@@ -49,7 +81,7 @@ const daysOfWeek = [
 
 const SAUNA_TIMEZONE = 'Europe/London'
 
-export function SessionForm({ open, onClose, template, onSuccess }: SessionFormProps) {
+export function SessionForm({ open, onClose, template, initialTimeSlot, onSuccess }: SessionFormProps) {
   const { toast } = useToast()
   const { user } = useUser()
   const { getToken } = useAuth()
@@ -71,14 +103,55 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | undefined>(undefined)
   const [generalExpanded, setGeneralExpanded] = useState(true)
   const [scheduleExpanded, setScheduleExpanded] = useState(true)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+
+  // Get the day of week in lowercase (e.g., "mon", "tue")
+  const getDayOfWeek = (date: Date) => {
+    return format(date, 'EEE').toLowerCase()
+  }
 
   // Initialize dates after component mounts
   useEffect(() => {
     if (!template) {
-      setDate(startOfDay(new Date()))
-      setRecurrenceStartDate(startOfDay(new Date()))
+      const today = new Date()
+      setDate(startOfDay(today))
+      setRecurrenceStartDate(startOfDay(today))
+      // Default to recurring schedule for new sessions with current day
+      setScheduleType("repeat")
+      setSchedules([{ 
+        id: "1", 
+        time: "09:00", 
+        days: [getDayOfWeek(today)] 
+      }])
     }
   }, [template])
+
+  // Update the date and time when initialTimeSlot changes
+  useEffect(() => {
+    if (initialTimeSlot) {
+      // Set the date
+      setDate(startOfDay(initialTimeSlot.start))
+      setRecurrenceStartDate(startOfDay(initialTimeSlot.start))
+      
+      // Calculate duration in minutes
+      const durationMs = initialTimeSlot.end.getTime() - initialTimeSlot.start.getTime()
+      const durationMinutes = Math.floor(durationMs / (1000 * 60))
+      const hours = Math.floor(durationMinutes / 60)
+      const minutes = durationMinutes % 60
+      setDuration(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`)
+      
+      // Set the time in the schedule and use the selected day
+      const timeString = format(initialTimeSlot.start, 'HH:mm')
+      setSchedules([{ 
+        id: "1", 
+        time: timeString, 
+        days: [getDayOfWeek(initialTimeSlot.start)] 
+      }])
+      
+      // Keep it as recurring schedule
+      setScheduleType("repeat")
+    }
+  }, [initialTimeSlot])
 
   useEffect(() => {
     if (template) {
@@ -257,7 +330,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           throw new Error(deleteSchedulesResult.error || "Failed to delete schedules")
         }
 
-        // Delete existing instances if switching to recurring
+        // Delete existing instances if it's a recurring template
         if (scheduleType === "repeat") {
           const deleteInstancesResult = await deleteSessionInstances(template.id)
           if (!deleteInstancesResult.success) {
@@ -321,8 +394,9 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         // Create recurring schedules
         const scheduleResults = await Promise.all(
           schedules.map((schedule) => {
-            const mappedDays = schedule.days.map(day => convertDayFormat(day, true));
-            if (mappedDays.some(d => !d)) {
+            // Keep the days in short format (mon, tue, etc.)
+            const mappedDays = schedule.days.map(day => day.toLowerCase());
+            if (mappedDays.some(d => !isValidDayString(d))) {
               console.error("Invalid day in schedule.days:", schedule.days);
               throw new Error("Invalid day selected in schedule.");
             }
@@ -341,6 +415,25 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
           console.error("Errors creating schedules:", errors)
           throw new Error(`Failed to create schedules: ${errors[0].error}`)
         }
+
+        // Generate instances for recurring templates
+        try {
+          console.log("About to generate instances for template:", {
+            id: templateId,
+            is_recurring: scheduleType === "repeat",
+            schedules: schedules
+          })
+          const result = await generateInstances()
+          console.log("Instance generation result:", result)
+        } catch (error) {
+          console.error("Error generating instances:", error)
+          // Don't throw here, as the template was created/updated successfully
+          toast({
+            title: "Warning",
+            description: "Session created/updated but failed to generate instances. They will be generated on the next scheduled run.",
+            variant: "destructive",
+          })
+        }
       }
 
       toast({
@@ -348,7 +441,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         description: template ? "Session updated successfully" : "Session created successfully",
       })
 
-      onSuccess?.()
+      onSuccess()
       onClose()
     } catch (error: any) {
       console.error("Error saving session:", error)
@@ -359,6 +452,47 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!template) return
+
+    setLoading(true)
+    try {
+      // Delete the template first
+      const deleteTemplateResult = await deleteSessionTemplate(template.id)
+      if (!deleteTemplateResult.success) {
+        throw new Error(deleteTemplateResult.error || "Failed to delete template")
+      }
+
+      // The schedules and instances will be automatically deleted due to CASCADE
+      // but we'll still try to delete them explicitly as a fallback
+      try {
+        await deleteSessionSchedules(template.id)
+        await deleteSessionInstances(template.id)
+      } catch (error) {
+        console.warn("Error deleting schedules/instances:", error)
+        // Don't throw here as the template was already deleted
+      }
+
+      toast({
+        title: "Success",
+        description: "Session deleted successfully",
+      })
+
+      onSuccess()
+      onClose()
+    } catch (error: any) {
+      console.error("Error deleting session:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete session. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setIsDeleteDialogOpen(false)
     }
   }
 
@@ -421,89 +555,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
-          {/* General Section */}
-          <div className="rounded-lg overflow-hidden">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-4 py-3 text-left font-medium bg-gray-50"
-              onClick={() => setGeneralExpanded(!generalExpanded)}
-            >
-              <span>General</span>
-              {generalExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-            </button>
-
-            {generalExpanded && (
-              <div className="px-4 pb-4 space-y-4">
-                {/* Status */}
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="status" className="text-sm font-medium">
-                    Session Status
-                  </Label>
-                  <div className="flex items-center space-x-2">
-                    <Switch id="status" checked={isOpen} onCheckedChange={setIsOpen} />
-                    <Label htmlFor="status" className="text-sm font-medium">
-                      {isOpen ? "Open" : "Closed"}
-                    </Label>
-                  </div>
-                </div>
-
-                {/* Name */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="name" className="text-sm font-medium">
-                      Session Name <span className="text-red-500">*</span>
-                    </Label>
-                    <span className="text-sm text-gray-500">0</span>
-                  </div>
-                  <Input id="name" placeholder="e.g., Regular Sauna" defaultValue={name} onChange={(e) => setName(e.target.value)} />
-                  <p className="text-sm text-gray-500">Give your session a short and clear name.</p>
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="description" className="text-sm font-medium">
-                      Description
-                    </Label>
-                    <span className="text-sm text-gray-500">0</span>
-                  </div>
-                  <Textarea
-                    id="description"
-                    placeholder="Describe the session..."
-                    defaultValue={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                  <p className="text-sm text-gray-500">Provide details about what participants can expect.</p>
-                </div>
-
-                {/* Capacity */}
-                <div className="space-y-2">
-                  <Label htmlFor="capacity" className="text-sm font-medium">
-                    Capacity <span className="text-red-500">*</span>
-                  </Label>
-                  <Input id="capacity" type="number" min="1" defaultValue={capacity} onChange={(e) => setCapacity(e.target.value)} />
-                  <p className="text-sm text-gray-500">Maximum number of participants allowed.</p>
-                </div>
-
-                {/* Duration */}
-                <div className="space-y-2">
-                  <Label htmlFor="duration" className="text-sm font-medium">
-                    Duration <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="duration"
-                    type="time"
-                    value={duration}
-                    onChange={handleDurationChange}
-                    step="60"
-                  />
-                  <p className="text-sm text-gray-500">Length of the session (hours:minutes).</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Schedule Section */}
+          {/* Schedule Section - Moved to top */}
           <div className="rounded-lg overflow-hidden">
             <button
               type="button"
@@ -517,8 +569,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
             {scheduleExpanded && (
               <div className="px-4 pb-4 space-y-4">
                 {/* Schedule Type */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Schedule Type</Label>
+                <div className="space-y-2 py-4" >
                   <div className="grid grid-cols-2 gap-4">
                     <Card
                       className={cn(
@@ -631,7 +682,7 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
                 ) : (
                   <>
                     <div className="space-y-2">
-                      <Label>Start Date</Label>
+                      <Label>Start Date <span className="text-red-500">*</span></Label>
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
@@ -743,13 +794,121 @@ export function SessionForm({ open, onClose, template, onSuccess }: SessionFormP
             )}
           </div>
 
-          <div className="sticky bottom-0 bg-white pt-4 border-t flex justify-between w-full">
-            <Button variant="outline" type="button" onClick={onClose}>
-              Save as draft
-            </Button>
-            <Button type="submit" className="bg-primary">
-              {template ? "Save Changes" : "Create Session"}
-            </Button>
+          {/* General Section */}
+          <div className="rounded-lg overflow-hidden">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-3 text-left font-medium bg-gray-50"
+              onClick={() => setGeneralExpanded(!generalExpanded)}
+            >
+              <span>General</span>
+              {generalExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+            </button>
+
+            {generalExpanded && (
+              <div className="px-4 pb-4 space-y-4">
+                {/* Status */}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="status" className="text-sm font-medium">
+                    Session Status
+                  </Label>
+                  <div className="flex items-center space-x-2">
+                    <Switch id="status" checked={isOpen} onCheckedChange={setIsOpen} />
+                    <Label htmlFor="status" className="text-sm font-medium">
+                      {isOpen ? "Open" : "Closed"}
+                    </Label>
+                  </div>
+                </div>
+
+                {/* Name */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="name" className="text-sm font-medium">
+                      Session Name
+                    </Label>
+                    <span className="text-sm text-gray-500">0</span>
+                  </div>
+                  <Input id="name" placeholder="e.g., Regular Sauna" defaultValue={name} onChange={(e) => setName(e.target.value)} />
+                  <p className="text-sm text-gray-500">Give your session a short and clear name.</p>
+                </div>
+
+                {/* Description */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="description" className="text-sm font-medium">
+                      Description
+                    </Label>
+                    <span className="text-sm text-gray-500">0</span>
+                  </div>
+                  <Textarea
+                    id="description"
+                    placeholder="Describe the session..."
+                    defaultValue={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                  <p className="text-sm text-gray-500">Provide details about what participants can expect.</p>
+                </div>
+
+                {/* Capacity */}
+                <div className="space-y-2">
+                  <Label htmlFor="capacity" className="text-sm font-medium">
+                    Capacity <span className="text-red-500">*</span>
+                  </Label>
+                  <Input id="capacity" type="number" min="1" defaultValue={capacity} onChange={(e) => setCapacity(e.target.value)} />
+                  <p className="text-sm text-gray-500">Maximum number of participants allowed.</p>
+                </div>
+
+                {/* Duration */}
+                <div className="space-y-2">
+                  <Label htmlFor="duration" className="text-sm font-medium">
+                    Duration <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="duration"
+                    type="time"
+                    value={duration}
+                    onChange={handleDurationChange}
+                    step="60"
+                  />
+                  <p className="text-sm text-gray-500">Length of the session (hours:minutes).</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky Footer */}
+          <div className="sticky bottom-0 bg-white border-t px-6 py-4 -mx-6 -mb-4">
+            <div className="flex justify-between w-full">
+              {template && (
+                <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" type="button">
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the session
+                        and all associated schedules and instances.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              <div className="ml-auto">
+                <Button type="submit" className="bg-primary" disabled={loading}>
+                  {loading ? "Saving..." : template ? "Save Changes" : "Create Session"}
+                </Button>
+              </div>
+            </div>
           </div>
         </form>
       </SheetContent>

@@ -2,8 +2,9 @@
 
 import { createClient } from "@supabase/supabase-js"
 import { SessionTemplate, SessionSchedule } from "@/types/session"
-import { auth } from "@clerk/nextjs/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 import { mapDayStringToInt, mapIntToDayString } from "@/lib/day-utils"
+import { ensureClerkUser } from "./clerk"
 
 interface CreateSessionTemplateParams {
   name: string
@@ -124,6 +125,29 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
 
     const supabase = createSupabaseClient()
 
+    // Get the user's clerk_users record
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("id, organization_id")
+      .eq("clerk_user_id", userId)
+      .single()
+
+    if (userError) {
+      console.error("Error getting clerk user:", userError)
+      return {
+        success: false,
+        error: "Failed to get clerk user"
+      }
+    }
+
+    if (!userData) {
+      console.error("No clerk user found for ID:", userId)
+      return {
+        success: false,
+        error: "No clerk user found"
+      }
+    }
+
     const { data, error } = await supabase
       .from("session_templates")
       .insert({
@@ -136,7 +160,8 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
         one_off_start_time: params.one_off_start_time,
         recurrence_start_date: params.recurrence_start_date,
         recurrence_end_date: params.recurrence_end_date,
-        created_by: userId // Use the verified userId
+        created_by: userData.id, // Use the clerk_users.id instead of clerk_user_id
+        organization_id: userData.organization_id
       })
       .select()
       .single()
@@ -177,7 +202,7 @@ export async function createSessionInstance(params: CreateSessionInstanceParams)
     // Verify the user has permission to create instances for this template
     const { data: template, error: templateError } = await supabase
       .from("session_templates")
-      .select("created_by")
+      .select("created_by, organization_id")
       .eq("id", params.template_id)
       .single()
 
@@ -201,7 +226,8 @@ export async function createSessionInstance(params: CreateSessionInstanceParams)
         template_id: params.template_id,
         start_time: params.start_time,
         end_time: params.end_time,
-        status: params.status
+        status: params.status,
+        organization_id: template.organization_id // Add the organization_id from the template
       })
       .select()
       .single()
@@ -239,6 +265,23 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
     const userId = await getAuthenticatedUser()
     const supabase = createSupabaseClient()
 
+    // Get the user's clerk_users record
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("id")
+      .eq("clerk_user_id", userId)
+      .single()
+
+    if (userError) {
+      console.error("Error getting clerk user:", userError)
+      return { success: false, error: "Failed to get clerk user" }
+    }
+
+    if (!userData) {
+      console.error("No clerk user found for ID:", userId)
+      return { success: false, error: "No clerk user found" }
+    }
+
     // Verify the user has permission to create schedules for this template
     const { data: template, error: templateError } = await supabase
       .from("session_templates")
@@ -253,7 +296,7 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       }
     }
 
-    if (template.created_by !== userId) {
+    if (template.created_by !== userData.id) {
       return {
         success: false,
         error: "Unauthorized: You can only create schedules for your own templates"
@@ -326,6 +369,7 @@ export async function getSessionTemplates(): Promise<{ data: SessionTemplate[] |
         capacity,
         duration_minutes,
         is_open,
+        is_recurring,
         created_at,
         updated_at,
         created_by,
@@ -350,6 +394,7 @@ export async function getSessionTemplates(): Promise<{ data: SessionTemplate[] |
     // Transform the data to match SessionTemplate type
     const transformedData = data?.map(template => ({
       ...template,
+      is_recurring: template.is_recurring ?? false,
       schedules: template.schedules?.map(schedule => ({
         id: schedule.id,
         time: schedule.time,
@@ -375,8 +420,28 @@ export async function getSessionTemplates(): Promise<{ data: SessionTemplate[] |
 export async function getSessions(): Promise<{ data: SessionTemplate[] | null; error: string | null }> {
   console.log("=== getSessions CALLED ===");
   try {
-    const userId = await getAuthenticatedUser()
+    const { userId } = await auth()
     console.log("Authenticated user ID:", userId)
+
+    if (!userId) {
+      console.error("No user ID from Clerk")
+      return { 
+        data: null, 
+        error: "No user ID from Clerk" 
+      }
+    }
+
+    // Get the full user object
+    const user = await currentUser()
+    console.log("Clerk user object:", user)
+
+    if (!user) {
+      console.error("No user object from Clerk")
+      return {
+        data: null,
+        error: "No user object from Clerk"
+      }
+    }
 
     let supabase
     try {
@@ -390,11 +455,44 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
       }
     }
 
+    // Get email from the user's primary email address
+    const primaryEmail = user.emailAddresses[0]?.emailAddress
+    if (!primaryEmail) {
+      console.error("No primary email found for user:", user)
+      return {
+        data: null,
+        error: "No primary email found for user"
+      }
+    }
+
+    console.log("User data from Clerk:", {
+      email: primaryEmail,
+      firstName: user.firstName,
+      lastName: user.lastName
+    })
+
+    // Ensure the clerk user exists in the database
+    const { success, id: clerkUserId, error: clerkError } = await ensureClerkUser(
+      userId,
+      primaryEmail,
+      user.firstName,
+      user.lastName
+    )
+
+    if (!success || !clerkUserId) {
+      console.error("Error ensuring clerk user:", clerkError)
+      return { 
+        data: null, 
+        error: `Failed to ensure clerk user: ${clerkError}` 
+      }
+    }
+
     // Try a very simple query first
     try {
       const { data: simpleData, error: simpleError } = await supabase
         .from('session_templates')
         .select('id, name')
+        .eq('created_by', clerkUserId)
         .limit(1)
       
       console.log("Simple query result:", { 
@@ -439,8 +537,10 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
           recurrence_end_date,
           created_at,
           updated_at,
-          created_by
+          created_by,
+          organization_id
         `)
+        .eq('created_by', clerkUserId)
         .order("created_at", { ascending: false })
 
       if (templatesError) {
@@ -538,6 +638,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
 
         return {
           ...template,
+          is_recurring: template.is_recurring ?? false,
           schedules: Object.values(scheduleGroups),
           instances: templateInstances.map(instance => ({
             id: instance.id,
@@ -580,6 +681,23 @@ export async function updateSessionTemplate(params: UpdateSessionTemplateParams)
     const userId = await getAuthenticatedUser()
     const supabase = createSupabaseClient()
 
+    // Get the user's clerk_users record
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("id")
+      .eq("clerk_user_id", userId)
+      .single()
+
+    if (userError) {
+      console.error("Error getting clerk user:", userError)
+      return { success: false, error: "Failed to get clerk user" }
+    }
+
+    if (!userData) {
+      console.error("No clerk user found for ID:", userId)
+      return { success: false, error: "No clerk user found" }
+    }
+
     // Only allow update if the user is the creator
     const { data: template, error: fetchError } = await supabase
       .from("session_templates")
@@ -590,7 +708,7 @@ export async function updateSessionTemplate(params: UpdateSessionTemplateParams)
     if (fetchError || !template) {
       return { success: false, error: "Template not found" }
     }
-    if (template.created_by !== userId) {
+    if (template.created_by !== userData.id) {
       return { success: false, error: "Unauthorized: You can only update your own templates" }
     }
 
@@ -686,6 +804,60 @@ export async function deleteSessionInstances(templateId: string): Promise<Delete
     return { success: true }
   } catch (error) {
     console.error("Error in deleteSessionInstances:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
+  }
+}
+
+export async function deleteSessionTemplate(templateId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const userId = await getAuthenticatedUser()
+    const supabase = createSupabaseClient()
+
+    // Get the user's clerk_users record
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("id")
+      .eq("clerk_user_id", userId)
+      .single()
+
+    if (userError) {
+      console.error("Error getting clerk user:", userError)
+      return { success: false, error: "Failed to get clerk user" }
+    }
+
+    if (!userData) {
+      console.error("No clerk user found for ID:", userId)
+      return { success: false, error: "No clerk user found" }
+    }
+
+    // Verify the user owns the template
+    const { data: template, error: templateError } = await supabase
+      .from("session_templates")
+      .select("created_by")
+      .eq("id", templateId)
+      .single()
+
+    if (templateError || !template) {
+      return { success: false, error: "Template not found" }
+    }
+
+    if (template.created_by !== userData.id) {
+      return { success: false, error: "Unauthorized: You can only delete your own templates" }
+    }
+
+    const { error } = await supabase
+      .from("session_templates")
+      .delete()
+      .eq("id", templateId)
+
+    if (error) {
+      console.error("Error deleting template:", error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in deleteSessionTemplate:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred" }
   }
 } 

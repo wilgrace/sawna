@@ -118,4 +118,93 @@ export async function createClerkUser(params: CreateClerkUserParams): Promise<Cr
       error: error instanceof Error ? error.message : "Unknown error occurred"
     }
   }
+}
+
+export async function ensureClerkUser(clerkUserId: string, email: string, firstName: string | null, lastName: string | null): Promise<GetClerkUserResult> {
+  try {
+    console.log("Ensuring clerk user exists:", {
+      clerkUserId,
+      email,
+      firstName,
+      lastName
+    })
+
+    if (!email) {
+      console.error("Email is required for clerk user")
+      return {
+        success: false,
+        error: "Email is required for clerk user"
+      }
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    // First try to get the user
+    const { data: existingUser, error: getError } = await supabase
+      .from("clerk_users")
+      .select("id")
+      .eq("clerk_user_id", clerkUserId)
+      .maybeSingle()
+
+    if (getError) {
+      console.error("Error getting clerk user:", getError)
+      return {
+        success: false,
+        error: getError.message
+      }
+    }
+
+    // If user exists, return their ID
+    if (existingUser) {
+      console.log("Found existing clerk user:", existingUser)
+      return {
+        success: true,
+        id: existingUser.id
+      }
+    }
+
+    console.log("Creating new clerk user...")
+
+    // If user doesn't exist, create them
+    const { data: newUser, error: createError } = await supabase
+      .from("clerk_users")
+      .insert({
+        clerk_user_id: clerkUserId,
+        email: email,
+        first_name: firstName,
+        last_name: lastName
+      })
+      .select("id")
+      .single()
+
+    if (createError) {
+      console.error("Error creating clerk user:", createError)
+      return {
+        success: false,
+        error: createError.message
+      }
+    }
+
+    console.log("Successfully created new clerk user:", newUser)
+
+    return {
+      success: true,
+      id: newUser.id
+    }
+  } catch (error) {
+    console.error("Error in ensureClerkUser:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    }
+  }
 } 

@@ -35,6 +35,7 @@ export interface SessionTemplate {
   created_at: string
   updated_at: string
   created_by: string
+  organization_id?: string
   schedules?: SessionSchedule[]
   instances?: SessionInstance[]
 }
