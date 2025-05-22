@@ -1,0 +1,75 @@
+/* Custom styles for react-big-calendar */
+.rbc-calendar {
+  @apply font-sans;
+}
+
+.rbc-toolbar {
+  @apply mb-4;
+}
+
+.rbc-toolbar button {
+  @apply bg-white border border-gray-300 rounded-md px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50;
+}
+
+.rbc-toolbar button.rbc-active {
+  @apply bg-gray-100 text-gray-900;
+}
+
+.rbc-header {
+  @apply py-2 font-medium text-sm;
+}
+
+.rbc-event {
+  background-color: white !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+  border-radius: 0.375rem !important;
+  color: #111827 !important;
+}
+
+.rbc-event-content {
+  @apply h-full;
+}
+
+.rbc-today {
+  @apply bg-blue-50;
+}
+
+.rbc-off-range-bg {
+  @apply bg-gray-50;
+}
+
+.rbc-show-more {
+  @apply text-blue-600 font-medium;
+}
+
+/* Ensure month view events have enough height */
+.rbc-month-view .rbc-event {
+  min-height: 2.5rem !important;
+}
+
+/* Ensure day/week view events have proper padding */
+.rbc-time-view .rbc-event {
+  padding: 2px !important;
+}
+
+/* Fix event title color */
+.rbc-event-label {
+  color: #111827 !important;
+}
+
+/* Ensure event content is visible */
+.rbc-event .rbc-event-content {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+}
+
+/* Past events styling */
+.rbc-event.opacity-60 {
+  opacity: 0.6 !important;
+  background-color: #f9fafb !important;
+  border-color: #e5e7eb !important;
+}

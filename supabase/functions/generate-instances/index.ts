@@ -8,8 +8,9 @@ console.log("Function starting...");
 console.log("ENVIRONMENT:", Deno.env.get("ENVIRONMENT"));
 console.log("SUPABASE_URL:", Deno.env.get("SUPABASE_URL") ? "Set" : "Not set");
 console.log("SUPABASE_SERVICE_ROLE_KEY:", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ? "Set" : "Not set");
+console.log("TIMEZONE:", Deno.env.get("TIMEZONE") ? "Set" : "Not set");
 
-const SAUNA_TIMEZONE = 'Europe/London'; // IMPORTANT: Set your sauna's local timezone
+const SAUNA_TIMEZONE = Deno.env.get("TIMEZONE") || 'Europe/London'; // Configurable timezone
 
 // Import day utilities
 const intToShortDay: Record<number, string> = {
@@ -42,8 +43,8 @@ serve(async (req) => {
   }
   
   try {
-    const supabaseUrl = "https://ukpvowpkfpidjtrpikzg.supabase.co";
-    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrcHZvd3BrZnBpZGp0cnBpa3pnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTgzNzI3NSwiZXhwIjoyMDYxNDEzMjc1fQ.ab7P51odznRaUQBUm5nkV1DWu8r1Do0o1BVOj83tmvM";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
 
     console.log("Using Supabase client with URL:", supabaseUrl);
     console.log("Environment variables:", {
@@ -60,14 +61,28 @@ serve(async (req) => {
       .select(`
         *,
         session_schedules (
+          id,
           time,
-          days
+          days,
+          start_time_local,
+          day_of_week,
+          is_active
         )
       `)
       .eq("is_recurring", true)
       .eq("is_open", true);
 
-    console.log("Raw query response:", { templates, templateError });
+    console.log("Raw query response:", { 
+      templates: templates?.map(t => ({
+        id: t.id,
+        name: t.name,
+        is_recurring: t.is_recurring,
+        is_open: t.is_open,
+        schedule_count: t.session_schedules?.length,
+        schedules: t.session_schedules
+      })),
+      error: templateError 
+    });
     
     if (templateError) {
       console.error("Error fetching templates:", templateError);
