@@ -7,6 +7,7 @@ interface CreateClerkUserParams {
   email: string
   first_name: string | null
   last_name: string | null
+  organization_id?: string | null
 }
 
 interface CreateClerkUserResult {
@@ -81,15 +82,72 @@ export async function createClerkUser(params: CreateClerkUserParams): Promise<Cr
       }
     )
 
+    // First check if the user already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from("clerk_users")
+      .select("id")
+      .eq("clerk_user_id", params.clerk_user_id)
+      .single()
+
+    if (checkError && checkError.code !== "PGRST116") { // PGRST116 is "no rows returned"
+      console.error("Error checking for existing user:", checkError)
+      return {
+        success: false,
+        error: "Failed to check for existing user"
+      }
+    }
+
+    if (existingUser) {
+      // User already exists, return their ID
+      return {
+        success: true,
+        id: existingUser.id
+      }
+    }
+
+    // Get the default organization ID
+    const { data: defaultOrg, error: orgError } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("name", "Default Organization")
+      .single()
+
+    if (orgError || !defaultOrg?.id) {
+      console.error("Error getting default organization:", orgError)
+      return {
+        success: false,
+        error: "Failed to get default organization"
+      }
+    }
+
+    const orgId = params.organization_id || defaultOrg.id;
+    if (!orgId) {
+      console.error("No valid organization_id found for clerk user creation.", { params, defaultOrg })
+      return {
+        success: false,
+        error: "No valid organization_id found for clerk user creation."
+      }
+    }
+
+    console.log("Creating clerk user with:", {
+      clerk_user_id: params.clerk_user_id,
+      email: params.email,
+      first_name: params.first_name,
+      last_name: params.last_name,
+      organization_id: orgId
+    });
+
+    // Create new user
     const { data, error } = await supabase
       .from("clerk_users")
       .insert({
         clerk_user_id: params.clerk_user_id,
         email: params.email,
         first_name: params.first_name,
-        last_name: params.last_name
+        last_name: params.last_name,
+        organization_id: orgId
       })
-      .select("id")
+      .select()
       .single()
 
     if (error) {
@@ -97,13 +155,6 @@ export async function createClerkUser(params: CreateClerkUserParams): Promise<Cr
       return {
         success: false,
         error: error.message
-      }
-    }
-
-    if (!data) {
-      return {
-        success: false,
-        error: "No data returned from insert"
       }
     }
 
@@ -175,16 +226,34 @@ export async function ensureClerkUser(clerkUserId: string, email: string, firstN
     console.log("Creating new clerk user...")
 
     // If user doesn't exist, create them
+    // Get the default organization ID
+    const { data: defaultOrg, error: orgError } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("name", "Default Organization")
+      .single();
+
+    if (orgError || !defaultOrg?.id) {
+      console.error("Error getting default organization:", orgError);
+      return {
+        success: false,
+        error: "Failed to get default organization"
+      };
+    }
+
+    const orgId = defaultOrg.id;
+
     const { data: newUser, error: createError } = await supabase
       .from("clerk_users")
       .insert({
         clerk_user_id: clerkUserId,
         email: email,
         first_name: firstName,
-        last_name: lastName
+        last_name: lastName,
+        organization_id: orgId
       })
       .select("id")
-      .single()
+      .single();
 
     if (createError) {
       console.error("Error creating clerk user:", createError)

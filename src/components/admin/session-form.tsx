@@ -20,7 +20,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useUser } from "@clerk/nextjs"
 import { useAuth } from "@clerk/nextjs"
 import { createClerkUser, getClerkUser } from "@/app/actions/clerk"
-import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances, deleteSessionTemplate } from "@/app/actions/session"
+import { createSessionTemplate, createSessionInstance, createSessionSchedule, updateSessionTemplate, deleteSessionSchedules, deleteSessionInstances, deleteSessionTemplate, deleteSchedule } from "@/app/actions/session"
 import { mapDayStringToInt, mapIntToDayString, convertDayFormat, isValidDayString } from "@/lib/day-utils"
 import { formatInTimeZone } from 'date-fns-tz'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
@@ -501,8 +501,30 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
     setSchedules([...schedules, { id: newId, time: "09:00", days: [] }])
   }
 
-  const removeSchedule = (id: string) => {
-    setSchedules(schedules.filter((schedule) => schedule.id !== id))
+  const removeSchedule = async (id: string) => {
+    if (!template) {
+      // For new templates, just remove from local state
+      setSchedules(schedules.filter((schedule) => schedule.id !== id))
+      return
+    }
+
+    try {
+      // For existing templates, delete from database
+      const result = await deleteSchedule(id)
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete schedule")
+      }
+
+      // Update local state
+      setSchedules(schedules.filter((schedule) => schedule.id !== id))
+    } catch (error: any) {
+      console.error("Error deleting schedule:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete schedule. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const updateScheduleTime = (id: string, time: string) => {
