@@ -5,19 +5,28 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { List, ChevronLeft, ChevronRight, Calendar, ChevronDown } from "lucide-react"
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfWeek as dateFnsStartOfWeek, endOfWeek as dateFnsEndOfWeek } from "date-fns"
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfWeek as dateFnsStartOfWeek, endOfWeek as dateFnsEndOfWeek, startOfDay, endOfDay, getDay } from "date-fns"
 import { SessionTemplate } from "@/types/session"
 import { cn } from "@/lib/utils"
 import { useCalendarView } from "@/hooks/use-calendar-view"
-import { Calendar as BigCalendar, momentLocalizer, View, Components } from 'react-big-calendar'
+import { Calendar as BigCalendar, momentLocalizer, View, Components, EventProps, Event } from 'react-big-calendar'
 import moment from 'moment'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
+import '@/styles/calendar.css'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { mapIntToDayString } from "@/lib/day-utils"
+
+// Add custom styles to hide rbc-event-label
+const calendarStyles = `
+  .rbc-event-label {
+    display: none !important;
+  }
+`
 
 // Configure moment to start week on Monday
 moment.locale('en', {
@@ -28,7 +37,7 @@ moment.locale('en', {
 
 const localizer = momentLocalizer(moment)
 
-interface CalendarEvent {
+interface CalendarEvent extends Event {
   id: string
   title: string
   start: Date
@@ -43,24 +52,46 @@ interface CalendarViewProps {
   showControls?: boolean
 }
 
+// Add this before the CalendarView component
+const CustomEvent = ({ event }: EventProps<CalendarEvent>) => {
+  const totalCapacity = event.resource.capacity || 10
+  const currentBookings = event.resource.instances?.find(i => i.start_time === event.start.toISOString())?.bookings?.length || 0
+  const availableSpots = totalCapacity - currentBookings
+
+  const getAvailabilityColor = (available: number, total: number) => {
+    if (available === 0) return "bg-gray-500"
+    const percentage = (available / total) * 100
+    if (percentage > 50) return "bg-green-500"
+    if (percentage > 25) return "bg-yellow-500"
+    return "bg-red-500"
+  }
+
+  return (
+    <div className="flex flex-col gap-1 p-1">
+      <div className="text-xs text-gray-500">
+        {format(event.start, 'HH:mm')} - {event.resource.duration_minutes}mins
+      </div>
+      <div className="font-medium">
+        {event.resource.name}
+      </div>
+      <Badge 
+        variant="secondary" 
+        className={`${getAvailabilityColor(availableSpots, totalCapacity)} text-white px-2 py-0.5 rounded-full text-xs`}
+      >
+        {availableSpots === 0 ? 'Sold out' : `${currentBookings}/${totalCapacity}`}
+      </Badge>
+    </div>
+  )
+}
+
 export function CalendarView({ sessions, onEditSession, onCreateSession, showControls = true }: CalendarViewProps) {
-  const { view: viewMode } = useCalendarView()
+  const { view, setView, date, setDate } = useCalendarView()
   const [currentView, setCurrentView] = useState<View>('week')
   const [isMobile, setIsMobile] = useState(false)
-  const [currentDate, setCurrentDate] = useState(new Date())
 
   // Debug logging for sessions data
   useEffect(() => {
-    console.log("Calendar View - Received sessions:", {
-      count: sessions.length,
-      sessions: sessions.map(s => ({
-        id: s.id,
-        name: s.name,
-        is_recurring: s.is_recurring,
-        schedules: s.schedules,
-        instances: s.instances
-      }))
-    })
+    console.log("Sessions data:", sessions)
   }, [sessions])
 
   // Handle responsive view
@@ -84,182 +115,167 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Convert sessions to events format for react-big-calendar
-  const events = sessions.flatMap(template => {
-    console.log("Processing template for events:", {
-      id: template.id,
-      name: template.name,
-      is_recurring: template.is_recurring,
-      schedules: template.schedules,
-      instances: template.instances
-    })
+  // Convert sessions to events
+  const events = sessions.flatMap((session) => {
+    const events: CalendarEvent[] = [];
 
-    // For recurring templates, use the schedules to create events
-    if (template.is_recurring && template.schedules) {
-      const scheduleEvents = template.schedules.flatMap(schedule => {
-        // Calculate the date range based on the current view
-        let startDate: Date
-        let endDate: Date
-        
-        switch (currentView) {
-          case 'month':
-            startDate = startOfMonth(currentDate)
-            endDate = endOfMonth(currentDate)
-            break
-          case 'week':
-            startDate = dateFnsStartOfWeek(currentDate, { weekStartsOn: 1 })
-            endDate = dateFnsEndOfWeek(currentDate, { weekStartsOn: 1 })
-            break
-          case 'day':
-            startDate = currentDate
-            endDate = currentDate
-            break
-          default:
-            startDate = dateFnsStartOfWeek(currentDate, { weekStartsOn: 1 })
-            endDate = dateFnsEndOfWeek(currentDate, { weekStartsOn: 1 })
+    // Process recurring templates
+    if (session.is_recurring && session.schedules) {
+      session.schedules.forEach((schedule) => {
+        const [hours, minutes] = schedule.time.split(':').map(Number);
+
+        // Get the date range based on the current view
+        let startDate: Date;
+        let endDate: Date;
+
+        if (currentView === 'month') {
+          startDate = startOfMonth(date);
+          endDate = endOfMonth(date);
+        } else if (currentView === 'week') {
+          startDate = dateFnsStartOfWeek(date, { weekStartsOn: 1 });
+          endDate = dateFnsEndOfWeek(date, { weekStartsOn: 1 });
+        } else {
+          startDate = startOfDay(date);
+          endDate = endOfDay(date);
         }
-        
-        console.log("Creating events for schedule:", {
-          schedule,
-          view: currentView,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          scheduleDays: schedule.days
-        })
-        
-        // Create events for each day in the schedule
-        return schedule.days.map(day => {
-          const [hours, minutes] = schedule.time.split(':').map(Number)
-          
-          // Create events for each occurrence within the date range
-          const events: CalendarEvent[] = []
-          let currentDate = new Date(startDate)
-          
-          while (currentDate <= endDate) {
-            // Check if this day matches the schedule day
-            const currentDay = format(currentDate, 'EEEE').toLowerCase()
-            const scheduleDay = day.toLowerCase()
-            
-            console.log("Comparing days:", {
-              currentDay,
-              scheduleDay,
-              matches: currentDay === scheduleDay,
-              currentDate: currentDate.toISOString()
-            })
-            
-            if (currentDay === scheduleDay) {
-              const eventDate = new Date(currentDate)
-              eventDate.setHours(hours, minutes, 0, 0)
-              
-              // Create end time
-              const endDate = new Date(eventDate)
-              endDate.setMinutes(endDate.getMinutes() + template.duration_minutes)
-              
-              events.push({
-                id: `${template.id}-${schedule.id}-${day}-${eventDate.toISOString()}`,
-                title: template.name,
-                start: eventDate,
-                end: endDate,
-                resource: template
-              })
-            }
-            
-            // Move to next day
-            currentDate.setDate(currentDate.getDate() + 1)
+
+        // Get the template's recurrence start and end dates
+        const recurrenceStart = session.recurrence_start_date ? new Date(session.recurrence_start_date) : null;
+        const recurrenceEnd = session.recurrence_end_date ? new Date(session.recurrence_end_date) : null;
+
+        // Create events for each day in the range
+        let currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          // Skip if before recurrence start date
+          if (recurrenceStart && currentDate < startOfDay(recurrenceStart)) {
+            currentDate = addDays(currentDate, 1);
+            continue;
           }
-          
-          console.log(`Created ${events.length} events for ${day}:`, events.map(e => ({
-            id: e.id,
-            title: e.title,
-            start: e.start.toISOString(),
-            end: e.end.toISOString(),
-            localStart: e.start.toString(),
-            localEnd: e.end.toString()
-          })))
-          
-          return events
-        })
-      })
-      
-      console.log("Generated events for recurring template:", {
-        templateId: template.id,
-        eventCount: scheduleEvents.length,
-        events: scheduleEvents.flat().map(e => ({
-          id: e.id,
-          title: e.title,
-          start: e.start.toISOString(),
-          end: e.end.toISOString(),
-          localStart: e.start.toString(),
-          localEnd: e.end.toString()
-        }))
-      })
-      
-      return scheduleEvents.flat()
-    }
-    
-    // For one-off templates, use the instances
-    if (template.instances && template.instances.length > 0) {
-      const instanceEvents = template.instances.map(instance => {
-        const start = new Date(instance.start_time)
-        const end = new Date(instance.end_time)
-        
-        return {
-          id: instance.id,
-          title: template.name,
-          start,
-          end,
-          resource: template
-        }
-      })
-      
-      console.log("Generated events for one-off template:", {
-        templateId: template.id,
-        eventCount: instanceEvents.length,
-        events: instanceEvents.map(e => ({
-          id: e.id,
-          title: e.title,
-          start: e.start.toISOString(),
-          end: e.end.toISOString(),
-          localStart: e.start.toString(),
-          localEnd: e.end.toString()
-        }))
-      })
-      
-      return instanceEvents
-    }
-    
-    // If no instances or schedules exist, create a placeholder event
-    const placeholderEvent = {
-      id: template.id,
-      title: template.name,
-      start: new Date(),
-      end: new Date(new Date().getTime() + template.duration_minutes * 60000),
-      resource: template
-    }
-    
-    console.log("Created placeholder event:", {
-      templateId: template.id,
-      event: {
-        ...placeholderEvent,
-        localStart: placeholderEvent.start.toString(),
-        localEnd: placeholderEvent.end.toString()
-      }
-    })
-    
-    return [placeholderEvent]
-  })
 
+          // Skip if after recurrence end date
+          if (recurrenceEnd && currentDate > startOfDay(recurrenceEnd)) {
+            currentDate = addDays(currentDate, 1);
+            continue;
+          }
+
+          // Get the day of week (0-6, where 0 is Sunday)
+          const dayOfWeek = getDay(currentDate);
+          // Convert to our format (0-6, where 0 is Sunday)
+          const adjustedDayOfWeek = dayOfWeek;
+          
+          // Check if this day is in the schedule
+          if (schedule.days.includes(mapIntToDayString(adjustedDayOfWeek, true))) {
+            // Create event in local time to match what the user sees
+            const startTime = new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth(),
+              currentDate.getDate(),
+              hours,
+              minutes,
+              0,
+              0
+            );
+
+            const endTime = new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth(),
+              currentDate.getDate(),
+              hours,
+              minutes + session.duration_minutes,
+              0,
+              0
+            );
+
+            events.push({
+              id: `${session.id}-${schedule.id}-${format(currentDate, 'yyyy-MM-dd')}`,
+              title: `${format(startTime, 'h:mm a')} – ${format(endTime, 'h:mm a')}: ${session.name}`,
+              start: startTime,
+              end: endTime,
+              resource: session
+            });
+          }
+          currentDate = addDays(currentDate, 1);
+        }
+      });
+    }
+
+    // Process one-off instances
+    if (!session.is_recurring && session.instances) {
+      session.instances.forEach((instance) => {
+        // Parse the ISO string and create a new Date object
+        const startTime = new Date(instance.start_time);
+        const endTime = new Date(instance.end_time);
+
+        // Format the time in local timezone
+        const formattedStartTime = format(startTime, 'h:mm a');
+        const formattedEndTime = format(endTime, 'h:mm a');
+
+        // Create events with the UTC times directly
+        events.push({
+          id: instance.id,
+          title: `${formattedStartTime} – ${formattedEndTime}: ${session.name}`,
+          start: startTime,
+          end: endTime,
+          resource: session
+        });
+      });
+    }
+
+    return events;
+  });
+
+  // Sort events by start time
+  events.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  // Debug logging
   console.log("Final events array:", {
     count: events.length,
     events: events.map(e => ({
       id: e.id,
       title: e.title,
       start: e.start.toISOString(),
-      end: e.end.toISOString(),
-      localStart: e.start.toString(),
-      localEnd: e.end.toString()
+      end: e.end.toISOString()
     }))
-  })
+  });
+
+  // Calculate time range based on sessions
+  const calculateTimeRange = () => {
+    if (events.length === 0) {
+      // Default to 7am-9pm if no events
+      return {
+        min: new Date(0, 0, 0, 7, 0, 0),
+        max: new Date(0, 0, 0, 21, 0, 0)
+      }
+    }
+
+    // Find earliest start and latest end times
+    let earliestStart = new Date(0, 0, 0, 23, 59, 59)
+    let latestEnd = new Date(0, 0, 0, 0, 0, 0)
+
+    events.forEach(event => {
+      const startHour = event.start.getHours()
+      const endHour = event.end.getHours()
+      
+      if (startHour < earliestStart.getHours()) {
+        earliestStart = new Date(0, 0, 0, startHour, 0, 0)
+      }
+      if (endHour > latestEnd.getHours()) {
+        latestEnd = new Date(0, 0, 0, endHour, 0, 0)
+      }
+    })
+
+    // Add padding hours if needed
+    const paddingHours = 2
+    const minHour = Math.max(0, earliestStart.getHours() - paddingHours)
+    const maxHour = Math.min(23, latestEnd.getHours() + paddingHours)
+
+    return {
+      min: new Date(0, 0, 0, minHour, 0, 0),
+      max: new Date(0, 0, 0, maxHour, 0, 0)
+    }
+  }
+
+  const timeRange = calculateTimeRange()
 
   const handleSelectSlot = ({ start, end }: { start: Date; end: Date }) => {
     onCreateSession(start, end)
@@ -272,24 +288,24 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
   const navigatePeriod = (direction: 'prev' | 'next') => {
     switch (currentView) {
       case 'month':
-        setCurrentDate(direction === 'prev' ? subMonths(currentDate, 1) : addMonths(currentDate, 1))
+        setDate(direction === 'prev' ? subMonths(date, 1) : addMonths(date, 1))
         break
       case 'week':
-        setCurrentDate(direction === 'prev' ? subWeeks(currentDate, 1) : addWeeks(currentDate, 1))
+        setDate(direction === 'prev' ? subWeeks(date, 1) : addWeeks(date, 1))
         break
       case 'day':
-        setCurrentDate(direction === 'prev' ? subDays(currentDate, 1) : addDays(currentDate, 1))
+        setDate(direction === 'prev' ? subDays(date, 1) : addDays(date, 1))
         break
     }
   }
 
   const goToToday = () => {
-    setCurrentDate(new Date())
+    setDate(new Date())
   }
 
   // Custom components for the calendar
-  const components: Components = {
-    toolbar: () => null, // Remove the default toolbar
+  const components: Components<CalendarEvent> = {
+    toolbar: () => null,
     header: ({ date, label }) => {
       if (currentView === 'month') {
         return <div className="rbc-header">{label}</div>
@@ -303,16 +319,17 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
         )
       }
       return <div className="rbc-header">{label}</div>
-    }
+    },
+    event: CustomEvent
   }
 
   return (
     <div className="space-y-6">
-      {viewMode === "calendar" ? (
+      {view === "calendar" ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="text-lg font-semibold">
-              {format(currentDate, 'MMMM yyyy')}
+              {format(date, 'MMMM yyyy')}
             </div>
             <div className="flex items-center space-x-2">
               <DropdownMenu>
@@ -369,14 +386,26 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
               onSelectEvent={handleSelectEvent}
               view={currentView}
               onView={setCurrentView}
-              date={currentDate}
-              onNavigate={setCurrentDate}
+              date={date}
+              onNavigate={setDate}
               step={30}
               timeslots={2}
-              min={new Date(0, 0, 0, 8, 0, 0)} // 8 AM
-              max={new Date(0, 0, 0, 20, 0, 0)} // 8 PM
-              eventPropGetter={(event) => ({
-                className: 'bg-primary text-primary-foreground hover:bg-primary/90'
+              min={timeRange.min}
+              max={timeRange.max}
+              eventPropGetter={(event: CalendarEvent) => ({
+                className: 'cursor-pointer !p-0',
+                style: {
+                  backgroundColor: 'white',
+                  color: '#111827',
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  borderColor: '#e5e7eb',
+                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                  borderRadius: '0.375rem',
+                  '&:hover': {
+                    backgroundColor: '#f3f4f6'
+                  }
+                }
               })}
               components={components}
               defaultView="week"
