@@ -25,6 +25,8 @@ import { mapDayStringToInt, mapIntToDayString, convertDayFormat, isValidDayStrin
 import { formatInTimeZone } from 'date-fns-tz'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { SessionTemplate } from "@/types/session"
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants'
+import { localToUTC, SAUNA_TIMEZONE } from '@/lib/time-utils'
 
 async function generateInstances() {
   try {
@@ -78,8 +80,6 @@ const daysOfWeek = [
   { value: "sat", label: "Sat" },
   { value: "sun", label: "Sun" },
 ]
-
-const SAUNA_TIMEZONE = 'Europe/London'
 
 export function SessionForm({ open, onClose, template, initialTimeSlot, onSuccess }: SessionFormProps) {
   const { toast } = useToast()
@@ -193,31 +193,17 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
         }
       } else {
         // Handle one-off session
-        if (template.one_off_start_time) {
-          const oneOffDate = parseISO(template.one_off_start_time)
-          console.log("Parsed one-off date:", oneOffDate)
-          
+        if (template.one_off_date) {
+          const oneOffDate = parseISO(template.one_off_date)
           if (isValid(oneOffDate)) {
-            const dateOnly = startOfDay(oneOffDate)
-            setDate(dateOnly)
-            // Extract time from one_off_start_time and set it in schedules
-            const timeString = format(oneOffDate, "HH:mm")
-            console.log("Extracted time string:", timeString)
-            
-            // Ensure we have a valid time string
-            if (timeString && timeString.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
-              setSchedules([{ id: "1", time: timeString, days: [] }])
-              console.log("Set schedule with time:", timeString)
-            } else {
-              console.warn("Invalid time string extracted:", timeString)
-              setSchedules([{ id: "1", time: "09:00", days: [] }])
-            }
-          } else {
-            console.warn("Invalid one-off date:", template.one_off_start_time)
-            setSchedules([{ id: "1", time: "09:00", days: [] }])
+            setDate(startOfDay(oneOffDate))
           }
+        }
+        
+        // Set the time from one_off_start_time
+        if (template.one_off_start_time) {
+          setSchedules([{ id: "1", time: template.one_off_start_time, days: [] }])
         } else {
-          console.log("No one_off_start_time found, using default")
           setSchedules([{ id: "1", time: "09:00", days: [] }])
         }
       }
@@ -225,80 +211,34 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
   }, [template])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+    e.preventDefault();
+    console.log("Form submitted with data:", {
+      name,
+      description,
+      capacity,
+      duration,
+      isOpen,
+      scheduleType,
+      date,
+      recurrenceStartDate,
+      recurrenceEndDate,
+      schedules
+    });
 
     try {
       if (!user) {
-        throw new Error("You must be logged in to create a session")
-      }
-
-      // Get the Clerk session token
-      const token = await getToken({ template: 'supabase' })
-      if (!token) {
-        throw new Error("Failed to get authentication token")
-      }
-
-      // Initialize Supabase client with the token
-      const supabase = createClientComponentClient({
-        options: {
-          global: {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      })
-
-      console.log("Current Clerk user ID:", user.id)
-
-      // Get the clerk user ID using server action
-      const clerkUserResult = await getClerkUser(user.id)
-
-      console.log("Clerk user lookup result:", { 
-        clerkUser: clerkUserResult,
-        query: {
-          clerk_user_id: user.id
-        }
-      })
-
-      if (!clerkUserResult.success) {
-        console.error("Error getting clerk user:", clerkUserResult.error)
-        throw new Error(`Failed to get clerk user: ${clerkUserResult.error}`)
-      }
-
-      let clerkUserId: string
-      if (!clerkUserResult.id) {
-        console.log("No clerk user found, creating one...")
-        // Create the user using the server action
-        const result = await createClerkUser({
-          clerk_user_id: user.id,
-          email: user.emailAddresses[0].emailAddress,
-          first_name: user.firstName,
-          last_name: user.lastName
-        })
-
-        if (!result.success || !result.id) {
-          console.error("Error creating clerk user:", result.error)
-          throw new Error(`Failed to create clerk user: ${result.error}`)
-        }
-
-        clerkUserId = result.id
-        console.log("Created new clerk user with ID:", clerkUserId)
-      } else {
-        clerkUserId = clerkUserResult.id
-        console.log("Using existing clerk user with ID:", clerkUserId)
+        throw new Error("You must be logged in to create a session");
       }
 
       // Convert duration from HH:mm to minutes
-      const [hours, minutes] = duration.split(':').map(Number)
-      const durationMinutes = hours * 60 + minutes
+      const [hours, minutes] = duration.split(':').map(Number);
+      const durationMinutes = hours * 60 + minutes;
 
-      let templateId: string
+      let templateId: string;
 
       if (template) {
-        console.log("Updating existing template...")
-        // Update existing template using server action
+        console.log("Updating existing template...");
+        // Update existing template
         const result = await updateSessionTemplate({
           id: template.id,
           name,
@@ -307,39 +247,28 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" && date ? (() => {
-            const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
-            const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0)
-            return formatInTimeZone(localDate, SAUNA_TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX")
-          })() : null,
-          recurrence_start_date: scheduleType === "repeat" ? recurrenceStartDate?.toISOString() : null,
-          recurrence_end_date: scheduleType === "repeat" ? recurrenceEndDate?.toISOString() : null,
-        })
+          one_off_start_time: scheduleType === "once" ? schedules[0]?.time : null,
+          one_off_date: scheduleType === "once" && date ? format(date, 'yyyy-MM-dd') : null,
+          recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? format(recurrenceStartDate, 'yyyy-MM-dd') : null,
+          recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? format(recurrenceEndDate, 'yyyy-MM-dd') : null
+        });
 
         if (!result.success) {
-          console.error("Error updating template:", result.error)
-          throw new Error(result.error || "Failed to update template")
+          console.error("Error updating template:", result.error);
+          throw new Error(`Failed to update template: ${result.error}`);
         }
 
-        templateId = template.id
+        templateId = template.id;
+        console.log("Updated template with ID:", templateId);
 
-        // Delete existing schedules using server action
-        const deleteSchedulesResult = await deleteSessionSchedules(template.id)
-        if (!deleteSchedulesResult.success) {
-          console.error("Error deleting schedules:", deleteSchedulesResult.error)
-          throw new Error(deleteSchedulesResult.error || "Failed to delete schedules")
-        }
-
-        // Delete existing instances if it's a recurring template
-        if (scheduleType === "repeat") {
-          const deleteInstancesResult = await deleteSessionInstances(template.id)
-          if (!deleteInstancesResult.success) {
-            console.error("Error deleting instances:", deleteInstancesResult.error)
-            throw new Error(deleteInstancesResult.error || "Failed to delete instances")
-          }
-        }
+        // Delete existing schedules and instances
+        console.log("Deleting existing schedules and instances...");
+        await Promise.all([
+          deleteSessionSchedules(templateId),
+          deleteSessionInstances(templateId)
+        ]);
       } else {
-        console.log("Creating new template...")
+        console.log("Creating new template...");
         // Create new template using server action
         const result = await createSessionTemplate({
           name,
@@ -348,112 +277,174 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
           duration_minutes: durationMinutes,
           is_open: isOpen,
           is_recurring: scheduleType === "repeat",
-          one_off_start_time: scheduleType === "once" && date ? (() => {
-            const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
-            const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0)
-            return formatInTimeZone(localDate, SAUNA_TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX")
-          })() : null,
-          recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? recurrenceStartDate.toISOString() : null,
-          recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? recurrenceEndDate.toISOString() : null,
+          one_off_start_time: scheduleType === "once" ? schedules[0]?.time : null,
+          one_off_date: scheduleType === "once" && date ? format(date, 'yyyy-MM-dd') : null,
+          recurrence_start_date: scheduleType === "repeat" && recurrenceStartDate ? format(recurrenceStartDate, 'yyyy-MM-dd') : null,
+          recurrence_end_date: scheduleType === "repeat" && recurrenceEndDate ? format(recurrenceEndDate, 'yyyy-MM-dd') : null,
           created_by: user.id
-        })
+        });
 
         if (!result.success || !result.id) {
-          console.error("Error creating template:", result.error)
-          throw new Error(`Failed to create template: ${result.error}`)
+          console.error("Error creating template:", result.error);
+          throw new Error(`Failed to create template: ${result.error}`);
         }
 
-        templateId = result.id
+        templateId = result.id;
+        console.log("Created template with ID:", templateId);
       }
 
       if (scheduleType === "once" && date) {
-        console.log("Creating single instance...")
-        // Create single instance using the template's one_off_start_time
-        const startTime = new Date(date)
-        const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number)
-        startTime.setHours(hours, minutes, 0, 0)
+        console.log("Creating single instance...");
+        // Create single instance using the template's one_off_start_time and one_off_date
+        const [hours, minutes] = (schedules[0]?.time || "09:00").split(':').map(Number);
         
-        // Use the template's duration_minutes for consistency
-        const endTime = new Date(startTime)
-        endTime.setMinutes(endTime.getMinutes() + durationMinutes)
+        // Create dates in local time
+        const localStartTime = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
+          hours,
+          minutes,
+          0,
+          0
+        );
+        
+        const localEndTime = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
+          hours,
+          minutes + durationMinutes,
+          0,
+          0
+        );
+
+        // Convert to UTC using the timezone
+        const instanceStartTimeUTC = localToUTC(localStartTime, SAUNA_TIMEZONE);
+        const instanceEndTimeUTC = localToUTC(localEndTime, SAUNA_TIMEZONE);
+
+        console.log("Creating instance with times:", {
+          localStartTime: localStartTime.toISOString(),
+          localEndTime: localEndTime.toISOString(),
+          startTime: instanceStartTimeUTC.toISOString(),
+          endTime: instanceEndTimeUTC.toISOString(),
+          durationMinutes,
+          timezone: SAUNA_TIMEZONE,
+          inputTime: schedules[0]?.time,
+          inputDate: date.toISOString()
+        });
 
         // Create the instance with the calculated times
         const instanceResult = await createSessionInstance({
           template_id: templateId,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
+          start_time: instanceStartTimeUTC.toISOString(),
+          end_time: instanceEndTimeUTC.toISOString(),
           status: 'scheduled'
-        })
+        });
 
         if (!instanceResult.success) {
-          console.error("Error creating instance:", instanceResult.error)
-          throw new Error(`Failed to create instance: ${instanceResult.error}`)
+          console.error("Error creating instance:", instanceResult.error);
+          throw new Error(`Failed to create instance: ${instanceResult.error}`);
         }
       } else if (scheduleType === "repeat") {
-        console.log("Creating recurring schedules...")
-        // Create recurring schedules
-        const scheduleResults = await Promise.all(
-          schedules.map((schedule) => {
-            // Keep the days in short format (mon, tue, etc.)
-            const mappedDays = schedule.days.map(day => day.toLowerCase());
-            if (mappedDays.some(d => !isValidDayString(d))) {
-              console.error("Invalid day in schedule.days:", schedule.days);
-              throw new Error("Invalid day selected in schedule.");
-            }
+        console.log("Creating recurring schedules...", {
+          templateId,
+          schedules,
+          scheduleType
+        });
 
-            return createSessionSchedule({
-              session_template_id: templateId,
-              time: schedule.time,
-              days: mappedDays,
-              start_time_local: schedule.time
-            })
-          })
-        )
-
-        const errors = scheduleResults.filter(r => !r.success)
-        if (errors.length > 0) {
-          console.error("Errors creating schedules:", errors)
-          throw new Error(`Failed to create schedules: ${errors[0].error}`)
+        // Validate schedules before creating
+        if (!schedules || schedules.length === 0) {
+          throw new Error("No schedules provided for recurring template");
         }
 
-        // Generate instances for recurring templates
-        try {
-          console.log("About to generate instances for template:", {
-            id: templateId,
-            is_recurring: scheduleType === "repeat",
-            schedules: schedules
+        // Create recurring schedules
+        const scheduleResults = await Promise.all(
+          schedules.map(async (schedule) => {
+            try {
+              // Keep the days in short format (mon, tue, etc.)
+              const mappedDays = schedule.days.map(day => day.toLowerCase());
+              if (mappedDays.some(d => !isValidDayString(d))) {
+                console.error("Invalid day in schedule.days:", schedule.days);
+                throw new Error("Invalid day selected in schedule.");
+              }
+
+              console.log("Creating schedule:", {
+                session_template_id: templateId,
+                time: schedule.time,
+                days: mappedDays
+              });
+
+              const result = await createSessionSchedule({
+                session_template_id: templateId,
+                time: schedule.time,
+                days: mappedDays,
+                start_time_local: schedule.time
+              });
+
+              console.log("Schedule creation result:", result);
+              return result;
+            } catch (error) {
+              console.error("Error creating individual schedule:", error);
+              throw error;
+            }
           })
-          const result = await generateInstances()
-          console.log("Instance generation result:", result)
-        } catch (error) {
-          console.error("Error generating instances:", error)
-          // Don't throw here, as the template was created/updated successfully
+        );
+
+        console.log("All schedule creation results:", scheduleResults);
+
+        const errors = scheduleResults.filter(r => !r.success);
+        if (errors.length > 0) {
+          console.error("Errors creating schedules:", errors);
+          throw new Error(`Failed to create schedules: ${errors[0].error}`);
+        }
+
+        // Wait a moment to ensure database consistency
+        console.log("Waiting for database consistency...");
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Generate instances for recurring template
+        console.log("Generating instances for template:", templateId);
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-instances`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            template_id_to_process: templateId
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Error generating instances:", errorData);
           toast({
             title: "Warning",
-            description: "Session created/updated but failed to generate instances. They will be generated on the next scheduled run.",
+            description: "Template created but instance generation failed. Instances will be generated by the scheduled job.",
             variant: "destructive",
-          })
+          });
+        } else {
+          console.log("Instance generation triggered successfully");
         }
       }
 
       toast({
         title: "Success",
         description: template ? "Session updated successfully" : "Session created successfully",
-      })
+      });
 
-      onSuccess()
-      onClose()
+      onSuccess?.();
+      onClose();
     } catch (error: any) {
-      console.error("Error saving session:", error)
+      console.error("Error in handleSubmit:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to save session. Please try again.",
+        description: error.message || "An error occurred. Please try again.",
         variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
+      });
     }
-  }
+  };
 
   const handleDelete = async () => {
     if (!template) return

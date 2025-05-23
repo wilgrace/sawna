@@ -18,9 +18,11 @@ export function MobileSessionList({ sessions, selectedDate }: MobileSessionListP
   const filteredSessions = sessions.filter((template) => {
     // Check if any instance matches this day
     if (template.instances) {
-      return template.instances.some(instance => 
-        isSameDay(new Date(instance.start_time), selectedDate)
-      )
+      return template.instances.some(instance => {
+        // JavaScript will automatically convert UTC to local time
+        const instanceDate = new Date(instance.start_time)
+        return isSameDay(instanceDate, selectedDate)
+      })
     }
     
     // Check if any recurring schedule matches this day
@@ -52,9 +54,11 @@ export function MobileSessionList({ sessions, selectedDate }: MobileSessionListP
     <div className="space-y-4 p-4">
       {filteredSessions.map((template) => {
         // Get all instances for this day
-        const dayInstances = template.instances?.filter(instance => 
-          isSameDay(new Date(instance.start_time), selectedDate)
-        ) || []
+        const dayInstances = template.instances?.filter(instance => {
+          // JavaScript will automatically convert UTC to local time
+          const instanceDate = new Date(instance.start_time)
+          return isSameDay(instanceDate, selectedDate)
+        }) || []
 
         // If no instances, create one from the schedule
         if (dayInstances.length === 0 && template.is_recurring && template.schedules) {
@@ -65,8 +69,15 @@ export function MobileSessionList({ sessions, selectedDate }: MobileSessionListP
           
           if (schedule) {
             const [hours, minutes] = schedule.time.split(':').map(Number)
-            const startTime = new Date(selectedDate)
-            startTime.setHours(hours, minutes, 0, 0)
+            const startTime = new Date(
+              selectedDate.getFullYear(),
+              selectedDate.getMonth(),
+              selectedDate.getDate(),
+              hours,
+              minutes,
+              0,
+              0
+            )
             
             return (
               <Card key={`${template.id}-${startTime.toISOString()}`}>
@@ -93,6 +104,7 @@ export function MobileSessionList({ sessions, selectedDate }: MobileSessionListP
 
         // Render each instance
         return dayInstances.map(instance => {
+          // JavaScript will automatically convert UTC to local time
           const startTime = new Date(instance.start_time)
           return (
             <Card key={instance.id}>
