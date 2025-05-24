@@ -75,6 +75,7 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
       if (!user) {
         // For non-logged in users, create a new clerk user
         const result = await createClerkUser({
+          clerk_user_id: `guest_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
           email: email,
           first_name: name.split(" ")[0],
           last_name: name.split(" ").slice(1).join(" ")
