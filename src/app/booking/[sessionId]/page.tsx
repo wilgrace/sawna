@@ -1,16 +1,27 @@
 import { Suspense } from "react"
 import { SessionPageClient } from "./session-page-client"
+import { redirect } from "next/navigation"
 
 interface SessionPageProps {
-  params: {
+  params: Promise<{
     sessionId: string
-  }
-  searchParams: {
+  }>
+  searchParams: Promise<{
     start?: string
-  }
+    edit?: string
+    bookingId?: string
+  }>
 }
 
-export default function SessionPage({ params, searchParams }: SessionPageProps) {
+export default async function SessionPage({ params, searchParams }: SessionPageProps) {
+  // Await both params and searchParams
+  const [resolvedParams, resolvedSearchParams] = await Promise.all([params, searchParams])
+  
+  // Validate sessionId
+  if (!resolvedParams.sessionId) {
+    redirect('/booking')
+  }
+
   return (
     <Suspense fallback={
       <div className="container mx-auto py-8">
@@ -22,7 +33,10 @@ export default function SessionPage({ params, searchParams }: SessionPageProps) 
         </div>
       </div>
     }>
-      <SessionPageClient params={params} searchParams={searchParams} />
+      <SessionPageClient 
+        sessionId={resolvedParams.sessionId} 
+        searchParams={resolvedSearchParams} 
+      />
     </Suspense>
   )
 } 

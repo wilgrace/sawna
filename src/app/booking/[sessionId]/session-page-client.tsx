@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
@@ -18,9 +17,7 @@ const supabase = createClient(
 )
 
 interface SessionPageClientProps {
-  params: {
-    sessionId: string
-  }
+  sessionId: string
   searchParams: {
     start?: string
     edit?: string
@@ -28,7 +25,7 @@ interface SessionPageClientProps {
   }
 }
 
-export function SessionPageClient({ params, searchParams }: SessionPageClientProps) {
+export function SessionPageClient({ sessionId, searchParams }: SessionPageClientProps) {
   const { user } = useUser()
   const [session, setSession] = useState<SessionTemplate | null>(null)
   const [loading, setLoading] = useState(true)
@@ -40,10 +37,32 @@ export function SessionPageClient({ params, searchParams }: SessionPageClientPro
   useEffect(() => {
     const fetchSession = async () => {
       try {
+        console.log("Debug - sessionId:", sessionId)
+        console.log("Debug - sessionId type:", typeof sessionId)
+        console.log("Debug - searchParams:", searchParams)
+
+        // Validate sessionId
+        if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+          console.error("Invalid session ID provided", { sessionId, searchParams })
+          setError("Invalid session ID provided")
+          setLoading(false)
+          return
+        }
+
         // Get start time from URL if present
         const startParam = searchParams.start
         if (startParam) {
-          setStartTime(new Date(startParam))
+          try {
+            const parsedDate = new Date(decodeURIComponent(startParam))
+            if (!isNaN(parsedDate.getTime())) {
+              console.log("Setting start time to:", parsedDate)
+              setStartTime(parsedDate)
+            } else {
+              console.error("Invalid start time format:", startParam)
+            }
+          } catch (err) {
+            console.error("Error parsing start time:", err)
+          }
         }
 
         // Check if we're in edit mode
@@ -52,7 +71,7 @@ export function SessionPageClient({ params, searchParams }: SessionPageClientPro
         
         console.log("=== Session Page Debug ===")
         console.log("Raw URL Parameters:", {
-          sessionId: params.sessionId,
+          sessionId,
           start: startParam,
           edit,
           bookingId,
@@ -64,7 +83,7 @@ export function SessionPageClient({ params, searchParams }: SessionPageClientPro
             bookingId,
             userId: user.id,
             edit,
-            sessionId: params.sessionId
+            sessionId
           })
 
           try {
@@ -110,7 +129,7 @@ export function SessionPageClient({ params, searchParams }: SessionPageClientPro
               created_by,
               organization_id
             `)
-            .eq('id', params.sessionId)
+            .eq('id', sessionId)
             .single()
 
           if (sessionError) {
@@ -124,15 +143,21 @@ export function SessionPageClient({ params, searchParams }: SessionPageClientPro
           setSession(sessionData as unknown as SessionTemplate)
         }
       } catch (err: any) {
+        console.error("Error in fetchSession:", err)
         setError(err.message)
-        setDebugInfo((prev: any) => ({ ...(prev || {}), error: err.message }))
+        setDebugInfo((prev: any) => ({ 
+          ...(prev || {}), 
+          error: err.message,
+          sessionId,
+          searchParams
+        }))
       } finally {
         setLoading(false)
       }
     }
 
     fetchSession()
-  }, [params.sessionId, searchParams, user])
+  }, [sessionId, searchParams, user])
 
   if (loading) {
     return (
