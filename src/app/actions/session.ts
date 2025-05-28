@@ -1677,8 +1677,35 @@ export async function getBookingDetails(bookingId: string) {
 
     console.log("Booking data found:", bookingData)
 
+    // Type assertion for the nested structure
+    type BookingWithInstance = {
+      id: string;
+      notes: string | null;
+      number_of_spots: number;
+      session_instance: {
+        id: string;
+        start_time: string;
+        end_time: string;
+        template: {
+          id: string;
+          name: string;
+          description: string | null;
+          capacity: number;
+          duration_minutes: number;
+          is_open: boolean;
+          is_recurring: boolean;
+          created_at: string;
+          updated_at: string;
+          created_by: string;
+          organization_id: string;
+        };
+      };
+    };
+
+    const typedBookingData = bookingData as unknown as BookingWithInstance;
+
     // The session_instance is now a single object, not an array
-    const sessionInstance = bookingData.session_instance
+    const sessionInstance = typedBookingData.session_instance
     if (!sessionInstance) {
       console.error("No session instance found for booking")
       return { success: false, error: "Session instance not found" }
@@ -1709,9 +1736,9 @@ export async function getBookingDetails(bookingId: string) {
       success: true,
       data: {
         booking: {
-          id: bookingData.id,
-          notes: bookingData.notes,
-          number_of_spots: bookingData.number_of_spots
+          id: typedBookingData.id,
+          notes: typedBookingData.notes,
+          number_of_spots: typedBookingData.number_of_spots
         },
         session: transformedSession,
         startTime: new Date(sessionInstance.start_time)
@@ -1776,8 +1803,27 @@ export async function getUserUpcomingBookings(userId: string): Promise<{ data: B
       return { data: [], error: null }
     }
 
+    // Type assertion for the nested structure
+    type BookingWithSession = {
+      id: string;
+      number_of_spots: number;
+      notes: string | null;
+      session_instance: {
+        id: string;
+        start_time: string;
+        end_time: string;
+        session_templates: {
+          id: string;
+          name: string;
+          duration_minutes: number;
+        };
+      };
+    };
+
+    const typedBookings = bookings as unknown as BookingWithSession[];
+
     // Sort the bookings by start time
-    const sortedBookings = bookings.sort((a, b) => 
+    const sortedBookings = typedBookings.sort((a, b) => 
       new Date(a.session_instance.start_time).getTime() - new Date(b.session_instance.start_time).getTime()
     )
 
