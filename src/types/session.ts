@@ -30,6 +30,7 @@ export interface SessionTemplate {
   is_open: boolean
   is_recurring: boolean
   one_off_start_time?: string | null
+  one_off_date?: string | null
   recurrence_start_date?: string | null
   recurrence_end_date?: string | null
   created_at: string
