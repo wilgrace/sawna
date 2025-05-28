@@ -18,13 +18,15 @@ const supabase = createClient(
 )
 
 interface SessionPageProps {
-  params: Promise<{
+  params: {
     sessionId: string
-  }>
+  }
+  searchParams: {
+    start?: string
+  }
 }
 
 export default function SessionPage({ params }: SessionPageProps) {
-  const resolvedParams = use(params)
   const searchParams = useSearchParams()
   const { user } = useUser()
   const [session, setSession] = useState<SessionTemplate | null>(null)
@@ -49,7 +51,7 @@ export default function SessionPage({ params }: SessionPageProps) {
         
         console.log("=== Session Page Debug ===")
         console.log("Raw URL Parameters:", {
-          sessionId: resolvedParams.sessionId,
+          sessionId: params.sessionId,
           start: startParam,
           edit,
           bookingId,
@@ -61,7 +63,7 @@ export default function SessionPage({ params }: SessionPageProps) {
             bookingId,
             userId: user.id,
             edit,
-            sessionId: resolvedParams.sessionId
+            sessionId: params.sessionId
           })
 
           try {
@@ -107,7 +109,7 @@ export default function SessionPage({ params }: SessionPageProps) {
               created_by,
               organization_id
             `)
-            .eq('id', resolvedParams.sessionId)
+            .eq('id', params.sessionId)
             .single()
 
           if (sessionError) {
@@ -129,7 +131,7 @@ export default function SessionPage({ params }: SessionPageProps) {
     }
 
     fetchSession()
-  }, [resolvedParams.sessionId, searchParams, user])
+  }, [params.sessionId, searchParams, user])
 
   if (loading) {
     return (
