@@ -6,20 +6,16 @@ import { ThemeProvider } from "@/components/shared/theme-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Booking Platform",
+  title: "Community Sauna",
   description: "Book your sessions",
 }
 
-export default function RootLayout({
+export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <ThemeProvider>{children}</ThemeProvider>
-      </body>
-    </html>
+    <ThemeProvider>{children}</ThemeProvider>
   )
 }

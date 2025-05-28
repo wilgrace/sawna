@@ -1,3 +1,75 @@
+-- Create session_instances table
+CREATE TABLE IF NOT EXISTS public.session_instances (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    template_id uuid NOT NULL REFERENCES public.session_templates(id) ON DELETE CASCADE,
+    start_time timestamptz NOT NULL,
+    end_time timestamptz NOT NULL,
+    status text NOT NULL DEFAULT 'scheduled',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT session_instances_status_check CHECK (status IN ('scheduled', 'completed', 'cancelled'))
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_session_instances_template_id
+ON public.session_instances(template_id);
+
+CREATE INDEX IF NOT EXISTS idx_session_instances_start_time
+ON public.session_instances(start_time);
+
+CREATE INDEX IF NOT EXISTS idx_session_instances_status
+ON public.session_instances(status);
+
+-- Add RLS policies
+ALTER TABLE public.session_instances ENABLE ROW LEVEL SECURITY;
+
+-- Allow read access to all authenticated users
+CREATE POLICY "Enable read access for authenticated users"
+ON public.session_instances
+FOR SELECT
+TO authenticated
+USING (true);
+
+-- Allow insert/update/delete only for template owners
+CREATE POLICY "Enable insert for template owners"
+ON public.session_instances
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    EXISTS (
+        SELECT 1 FROM public.session_templates st
+        JOIN public.clerk_users cu ON st.created_by::text = cu.clerk_user_id
+        WHERE st.id = template_id
+        AND cu.clerk_user_id = auth.uid()::text
+    )
+);
+
+CREATE POLICY "Enable update for template owners"
+ON public.session_instances
+FOR UPDATE
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.session_templates st
+        JOIN public.clerk_users cu ON st.created_by::text = cu.clerk_user_id
+        WHERE st.id = template_id
+        AND cu.clerk_user_id = auth.uid()::text
+    )
+);
+
+CREATE POLICY "Enable delete for template owners"
+ON public.session_instances
+FOR DELETE
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.session_templates st
+        JOIN public.clerk_users cu ON st.created_by::text = cu.clerk_user_id
+        WHERE st.id = template_id
+        AND cu.clerk_user_id = auth.uid()::text
+    )
+);
+
 -- Create a new table with the correct structure
 CREATE TABLE IF NOT EXISTS public.session_instances_new (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -44,14 +116,14 @@ FROM public.session_instances si
 JOIN template_owners owners ON si.template_id = owners.template_id;
 
 -- Create indexes on new table
-CREATE INDEX IF NOT EXISTS idx_session_instances_new_template_id 
+CREATE INDEX IF NOT EXISTS idx_session_instances_new_template_id
 ON public.session_instances_new(template_id);
 
-CREATE INDEX IF NOT EXISTS idx_session_instances_new_start_time 
+CREATE INDEX IF NOT EXISTS idx_session_instances_new_start_time
 ON public.session_instances_new(start_time);
 
-CREATE INDEX IF NOT EXISTS idx_session_instances_new_clerk_user_id 
-ON public.session_instances_new(clerk_user_id);
+CREATE INDEX IF NOT EXISTS idx_session_instances_new_status
+ON public.session_instances_new(status);
 
 -- Enable RLS on new table
 ALTER TABLE public.session_instances_new ENABLE ROW LEVEL SECURITY;

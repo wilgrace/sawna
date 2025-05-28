@@ -10,7 +10,7 @@ import { redirect } from "next/navigation"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Booking Platform",
+  title: "Session",
   description: "Admin dashboard for managing sessions and bookings",
 }
 

@@ -6,11 +6,8 @@ export default function SignInPage() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <SignIn
-        // Change routing to "virtual"
-        routing="virtual" // <--- CHANGE THIS
+        routing="virtual"
         signUpUrl="/sign-up"
-        fallbackRedirectUrl="/home" // Or your desired redirect
-        // forceRedirectUrl="/home" // Or use this if needed
       />
     </div>
   );

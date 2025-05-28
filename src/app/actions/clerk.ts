@@ -2,12 +2,12 @@
 
 import { createClient } from "@supabase/supabase-js"
 
-interface CreateClerkUserParams {
-  clerk_user_id: string
-  email: string
-  first_name: string | null
-  last_name: string | null
-  organization_id?: string | null
+export interface CreateClerkUserParams {
+  clerk_user_id?: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  organization_id?: string;
 }
 
 interface CreateClerkUserResult {

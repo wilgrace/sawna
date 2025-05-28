@@ -1,55 +1,42 @@
 import { Suspense } from "react"
-import { getSession } from "@/app/actions/session"
-import { SessionDetails } from "@/components/booking/session-details"
-import { BookingForm } from "@/components/booking/booking-form"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { SessionPageClient } from "./session-page-client"
+import { redirect } from "next/navigation"
 
-export default async function SessionPage({
-  searchParams,
-  params,
-}: {
-  searchParams: { start?: string }
-  params: { sessionId: string }
-}) {
-  const start = searchParams?.start ? new Date(searchParams.start) : undefined
-  const sessionId = params?.sessionId
+interface SessionPageProps {
+  params: Promise<{
+    sessionId: string
+  }>
+  searchParams: Promise<{
+    start?: string
+    edit?: string
+    bookingId?: string
+  }>
+}
 
-  const { data: session, error } = await getSession(sessionId)
-
-  if (error) {
-    return (
-      <div className="container mx-auto p-4">
-        <Alert variant="destructive">
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return (
-      <div className="container mx-auto p-4">
-        <Alert>
-          <AlertTitle>Session Not Found</AlertTitle>
-          <AlertDescription>The requested session could not be found.</AlertDescription>
-        </Alert>
-      </div>
-    )
+export default async function SessionPage({ params, searchParams }: SessionPageProps) {
+  // Await both params and searchParams
+  const [resolvedParams, resolvedSearchParams] = await Promise.all([params, searchParams])
+  
+  // Validate sessionId
+  if (!resolvedParams.sessionId) {
+    redirect('/booking')
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="space-y-8">
-        <div className="grid md:grid-cols-2 gap-8">
-          <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
-            <SessionDetails session={session} startTime={start} />
-          </Suspense>
-
-          <BookingForm session={session} startTime={start} />
+    <Suspense fallback={
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading session details...</p>
+          </div>
         </div>
       </div>
-    </div>
+    }>
+      <SessionPageClient 
+        sessionId={resolvedParams.sessionId} 
+        searchParams={resolvedSearchParams} 
+      />
+    </Suspense>
   )
 } 

@@ -1,0 +1,92 @@
+/* Custom styles for react-big-calendar */
+.rbc-calendar {
+  font-family: inherit;
+}
+
+.rbc-header {
+  padding: 0.5rem 0;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.rbc-event {
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border-radius: 0.375rem;
+}
+
+.rbc-event-content {
+  height: 100%;
+}
+
+.rbc-today {
+  background-color: #eff6ff;
+}
+
+.rbc-off-range-bg {
+  background-color: #f9fafb;
+}
+
+.rbc-show-more {
+  color: #2563eb;
+  font-weight: 500;
+}
+
+/* Ensure month view events have enough height */
+.rbc-month-view .rbc-event {
+  min-height: 2.5rem;
+}
+
+/* Ensure day/week view events have proper padding */
+.rbc-time-view .rbc-event {
+  padding: 2px;
+}
+
+/* Hide event label */
+.rbc-event-label {
+  display: none !important;
+}
+
+/* Ensure event content is visible */
+.rbc-event .rbc-event-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+/* Past events styling */
+.rbc-event.opacity-60 {
+  opacity: 0.6;
+  background-color: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+/* Increase hour row height */
+.rbc-time-view .rbc-time-gutter .rbc-timeslot-group {
+  min-height: 80px;
+}
+
+.rbc-time-view .rbc-time-content .rbc-timeslot-group {
+  min-height: 80px;
+}
+
+.rbc-time-view .rbc-time-content {
+  border-top: 1px solid #e5e7eb;
+}
+
+.rbc-time-view .rbc-time-gutter {
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Booked session styling */
+.rbc-event.booked-session {
+  background-color: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #86efac !important;
+}
+
+.rbc-event.booked-session:hover {
+  background-color: #bbf7d0 !important;
+} 

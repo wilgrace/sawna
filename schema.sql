@@ -233,13 +233,14 @@ CREATE TABLE IF NOT EXISTS "public"."session_templates" (
     "duration_minutes" integer NOT NULL,
     "is_open" boolean DEFAULT true NOT NULL,
     "is_recurring" boolean DEFAULT false NOT NULL,
-    "one_off_start_time" timestamp with time zone,
+    "one_off_start_time" time without time zone,
+    "one_off_date" date,
     "recurrence_start_date" "date",
     "recurrence_end_date" "date",
     "created_by" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
-    CONSTRAINT "chk_recurring_fields" CHECK (((("is_recurring" = true) AND ("one_off_start_time" IS NULL) AND ("recurrence_start_date" IS NOT NULL)) OR (("is_recurring" = false) AND ("one_off_start_time" IS NOT NULL) AND ("recurrence_start_date" IS NULL) AND ("recurrence_end_date" IS NULL))))
+    CONSTRAINT "chk_recurring_fields" CHECK (((("is_recurring" = true) AND ("one_off_start_time" IS NULL) AND ("one_off_date" IS NULL) AND ("recurrence_start_date" IS NOT NULL)) OR (("is_recurring" = false) AND ("one_off_start_time" IS NOT NULL) AND ("one_off_date" IS NOT NULL) AND ("recurrence_start_date" IS NULL) AND ("recurrence_end_date" IS NULL))))
 );
 
 
