@@ -4,6 +4,7 @@ import { formatInTimeZone, zonedTimeToUtc, utcToZonedTime } from "https://cdn.sk
 import { addDays, format, parseISO, startOfDay, formatISO } from "https://esm.sh/date-fns@2.30.0";
 import { addMinutes, getDay, set, addMonths } from "https://esm.sh/date-fns@2.30.0";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { corsHeaders } from '../_shared/cors.ts';
 
 // Debug logging
 console.log("Function starting...");
@@ -75,22 +76,16 @@ const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
   return serve(async (req) => {
     // Handle CORS
     if (req.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-      });
+      return new Response('ok', { headers: corsHeaders });
     }
 
     try {
       const response = await handler(req);
       // Ensure CORS headers are added to all responses
       const headers = new Headers(response.headers);
-      headers.set('Access-Control-Allow-Origin', '*');
-      headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-      headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      Object.entries(corsHeaders).forEach(([key, value]) => {
+        headers.set(key, value);
+      });
       
       return new Response(response.body, {
         status: response.status,
@@ -103,12 +98,7 @@ const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
         JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error occurred" }),
         {
           status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
