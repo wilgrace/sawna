@@ -199,7 +199,7 @@ INSERT INTO public.clerk_users (
   is_super_admin
 )
 VALUES 
-  ('4e376853-0880-4b3e-a669-edf561e116dc', 'user_2xe2sYKNiaAGyXeJsG3CrCvk7vZ', 'wil.grace@gmail..com', 'Wil', 'Grace', 'dbdc958c-7dde-46db-9f3d-929b64102174', true),
+  ('4e376853-0880-4b3e-a669-edf561e116dc', 'user_2xe2sYKNiaAGyXeJsG3CrCvk7vZ', 'wil.grace@gmail..com', 'Wil', 'Grace', '11111111-1111-1111-1111-111111111111', true),
   ('33333333-3333-3333-3333-333333333333', 'user_3def456', 'user@example.com', 'Regular', 'User', '11111111-1111-1111-1111-111111111111', false);
 
 -- Create sample session templates
