@@ -50,16 +50,15 @@ interface CreateSessionInstanceResult {
 }
 
 interface CreateSessionScheduleParams {
-  session_template_id: string
-  time: string
-  days: string[]
-  start_time_local: string
+  session_template_id: string;
+  start_time_local: string;
+  day_of_week: number;
 }
 
 interface CreateSessionScheduleResult {
-  success: boolean
-  id?: string
-  error?: string
+  success: boolean;
+  error?: string;
+  scheduleId?: string;
 }
 
 interface UpdateSessionTemplateParams {
@@ -402,7 +401,8 @@ export async function createSessionInstance(params: CreateSessionInstanceParams)
         start_time: params.start_time,
         end_time: params.end_time,
         status: params.status,
-        organization_id: template.organization_id
+        organization_id: template.organization_id,
+        clerk_user_id: userData.clerk_user_id
       })
       .select()
       .single()
@@ -447,14 +447,9 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       .eq("clerk_user_id", userId)
       .single()
 
-    if (userError) {
+    if (userError || !userData) {
       console.error("Error getting clerk user:", userError)
       return { success: false, error: "Failed to get clerk user" }
-    }
-
-    if (!userData) {
-      console.error("No clerk user found for ID:", userId)
-      return { success: false, error: "No clerk user found" }
     }
 
     // Verify the user has permission to create schedules for this template
@@ -465,74 +460,33 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
       .single()
 
     if (templateError || !template) {
-      return {
-        success: false,
-        error: "Template not found"
-      }
+      return { success: false, error: "Template not found" }
     }
 
     if (template.created_by !== userData.id) {
-      return {
-        success: false,
-        error: "Unauthorized: You can only create schedules for your own templates"
-      }
+      return { success: false, error: "Unauthorized: You don't have permission to create schedules for this template" }
     }
 
-    // Validate time format
-    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-    if (!timeRegex.test(params.time)) {
-      return {
-        success: false,
-        error: "Invalid time format. Expected HH:mm"
-      }
+    const { data, error } = await supabase
+      .from("session_schedules")
+      .insert({
+        session_template_id: params.session_template_id,
+        start_time_local: params.start_time_local,
+        day_of_week: params.day_of_week,
+        is_active: true
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating schedule:", error);
+      return { success: false, error: error.message };
     }
 
-    // Create a schedule for each day
-    const schedulePromises = params.days.map(async (day) => {
-      const dayOfWeek = mapDayStringToInt(day)
-
-      console.log(`Creating schedule for day ${day} (day_of_week: ${dayOfWeek})`);
-
-      const { data, error } = await supabase
-        .from("session_schedules")
-        .insert({
-          session_template_id: params.session_template_id,
-          start_time_local: params.time,
-          day_of_week: dayOfWeek,
-          time: params.time,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error(`Error creating schedule for day ${day}:`, error);
-        throw error
-      }
-
-      console.log(`Successfully created schedule:`, data);
-      return data
-    })
-
-    const results = await Promise.all(schedulePromises)
-
-    if (results.some(result => !result)) {
-      return {
-        success: false,
-        error: "Failed to create some schedules"
-      }
-    }
-
-    // Log the created schedules
-    console.log("Created schedules:", results);
-
-    return { success: true }
+    return { success: true, scheduleId: data.id };
   } catch (error) {
-    console.error("Error in createSessionSchedule:", error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : "Unknown error occurred" 
-    }
+    console.error("Error in createSessionSchedule:", error);
+    return { success: false, error: "Unknown error occurred" };
   }
 }
 
