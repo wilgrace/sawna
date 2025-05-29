@@ -149,4 +149,49 @@ CREATE OR REPLACE TRIGGER "on_session_instances_update" BEFORE UPDATE ON "public
 CREATE OR REPLACE TRIGGER "on_session_schedules_update" BEFORE UPDATE ON "public"."session_schedules" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 CREATE OR REPLACE TRIGGER "on_session_templates_update" BEFORE UPDATE ON "public"."session_templates" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 
+-- Create a function to call the Edge Function
+CREATE OR REPLACE FUNCTION public.trigger_instance_generation(template_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Call the Edge Function using pg_net
+  PERFORM net.http_post(
+    url := 'http://localhost:54321/functions/v1/generate-instances',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
+    ),
+    body := jsonb_build_object('template_id_to_process', template_id)
+  );
+END;
+$$;
+
 RESET ALL;
+
+-- Reset the database
+TRUNCATE TABLE public.session_schedules CASCADE;
+TRUNCATE TABLE public.session_instances CASCADE;
+TRUNCATE TABLE public.session_templates CASCADE;
+TRUNCATE TABLE public.clerk_users CASCADE;
+TRUNCATE TABLE public.organizations CASCADE;
+
+-- Create sample organization
+INSERT INTO public.organizations (id, name, description)
+VALUES 
+  ('11111111-1111-1111-1111-111111111111', 'Sample Organization', 'A sample organization for testing');
+
+-- Create sample clerk users
+INSERT INTO public.clerk_users (
+  id,
+  clerk_user_id,
+  email,
+  first_name,
+  last_name,
+  organization_id,
+  is_super_admin
+)
+VALUES 
+  ('4e376853-0880-4b3e-a669-edf561e116dc', 'user_2xe2sYKNiaAGyXeJsG3CrCvk7vZ', 'wil.grace@gmail..com', 'Wil', 'Grace', '11111111-1111-1111-1111-111111111111', true),
+  ('33333333-3333-3333-3333-333333333333', 'user_3def456', 'user@example.com', 'Regular', 'User', '11111111-1111-1111-1111-111111111111', false);
