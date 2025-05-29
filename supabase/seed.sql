@@ -135,13 +135,19 @@ CREATE TABLE IF NOT EXISTS "public"."session_templates" (
     "duration_minutes" integer NOT NULL,
     "is_open" boolean DEFAULT true NOT NULL,
     "is_recurring" boolean DEFAULT false NOT NULL,
-    "one_off_start_time" timestamp with time zone,
+    "one_off_date" "date",
+    "one_off_start_time" time without time zone,
     "recurrence_start_date" "date",
     "recurrence_end_date" "date",
-    "created_by" "text" NOT NULL,
+    "created_by" "uuid" NOT NULL,
+    "organization_id" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
-    CONSTRAINT "chk_recurring_fields" CHECK (((("is_recurring" = true) AND ("one_off_start_time" IS NULL) AND ("recurrence_start_date" IS NOT NULL)) OR (("is_recurring" = false) AND ("one_off_start_time" IS NOT NULL) AND ("recurrence_start_date" IS NULL) AND ("recurrence_end_date" IS NULL))))
+    CONSTRAINT "chk_recurring_fields" CHECK (
+      (("is_recurring" = true) AND ("one_off_start_time" IS NULL) AND ("one_off_date" IS NULL) AND ("recurrence_start_date" IS NOT NULL))
+      OR 
+      (("is_recurring" = false) AND ("one_off_start_time" IS NOT NULL) AND ("one_off_date" IS NOT NULL) AND ("recurrence_start_date" IS NULL) AND ("recurrence_end_date" IS NULL))
+    )
 );
 
 CREATE OR REPLACE TRIGGER "on_saunas_update" BEFORE UPDATE ON "public"."saunas" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
@@ -149,4 +155,90 @@ CREATE OR REPLACE TRIGGER "on_session_instances_update" BEFORE UPDATE ON "public
 CREATE OR REPLACE TRIGGER "on_session_schedules_update" BEFORE UPDATE ON "public"."session_schedules" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 CREATE OR REPLACE TRIGGER "on_session_templates_update" BEFORE UPDATE ON "public"."session_templates" FOR EACH ROW EXECUTE FUNCTION "public"."handle_updated_at"();
 
+-- Create a function to call the Edge Function
+CREATE OR REPLACE FUNCTION public.trigger_instance_generation(template_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Call the Edge Function using pg_net
+  PERFORM net.http_post(
+    url := 'http://localhost:54321/functions/v1/generate-instances',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
+    ),
+    body := jsonb_build_object('template_id_to_process', template_id)
+  );
+END;
+$$;
+
 RESET ALL;
+
+-- Reset the database
+TRUNCATE TABLE public.session_schedules CASCADE;
+TRUNCATE TABLE public.session_instances CASCADE;
+TRUNCATE TABLE public.session_templates CASCADE;
+TRUNCATE TABLE public.clerk_users CASCADE;
+TRUNCATE TABLE public.organizations CASCADE;
+
+-- Create sample organization
+INSERT INTO public.organizations (id, name, description)
+VALUES 
+  ('11111111-1111-1111-1111-111111111111', 'Sample Organization', 'A sample organization for testing');
+
+-- Create sample clerk users
+INSERT INTO public.clerk_users (
+  id,
+  clerk_user_id,
+  email,
+  first_name,
+  last_name,
+  organization_id,
+  is_super_admin
+)
+VALUES 
+  ('4e376853-0880-4b3e-a669-edf561e116dc', 'user_2xe2sYKNiaAGyXeJsG3CrCvk7vZ', 'wil.grace@gmail..com', 'Wil', 'Grace', 'dbdc958c-7dde-46db-9f3d-929b64102174', true),
+  ('33333333-3333-3333-3333-333333333333', 'user_3def456', 'user@example.com', 'Regular', 'User', '11111111-1111-1111-1111-111111111111', false);
+
+-- Create sample session templates
+INSERT INTO public.session_templates (
+  id,
+  name,
+  description,
+  capacity,
+  duration_minutes,
+  is_open,
+  is_recurring,
+  one_off_date,
+  one_off_start_time,
+  recurrence_start_date,
+  recurrence_end_date,
+  created_by,
+  organization_id
+)
+VALUES 
+  -- One-off session
+  ('44444444-4444-4444-4444-444444444444', 'One-off Session', 'A single session', 10, 60, true, false, 
+   '2024-05-25', '10:00', NULL, NULL, 
+   '4e376853-0880-4b3e-a669-edf561e116dc', '11111111-1111-1111-1111-111111111111'),
+  
+  -- Recurring session
+  ('55555555-5555-5555-5555-555555555555', 'Weekly Session', 'A recurring weekly session', 15, 90, true, true,
+   NULL, NULL, '2024-05-01', '2024-12-31',
+   '4e376853-0880-4b3e-a669-edf561e116dc', '11111111-1111-1111-1111-111111111111');
+
+-- Create sample session schedules for the recurring session
+INSERT INTO public.session_schedules (
+  id,
+  session_template_id,
+  start_time_local,
+  day_of_week,
+  is_active
+)
+VALUES 
+  ('66666666-6666-6666-6666-666666666666', '55555555-5555-5555-5555-555555555555', '09:00', 1, true),  -- Monday
+  ('77777777-7777-7777-7777-777777777777', '55555555-5555-5555-5555-555555555555', '09:00', 3, true),  -- Wednesday
+  ('88888888-8888-8888-8888-888888888888', '55555555-5555-5555-5555-555555555555', '09:00', 5, true);  -- Friday
+

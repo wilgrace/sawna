@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, date } from 'drizzle-orm/pg-core';
 
 export const sessionTemplates = pgTable('session_templates', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -9,20 +9,21 @@ export const sessionTemplates = pgTable('session_templates', {
   isOpen: boolean('is_open').notNull().default(true),
   isRecurring: boolean('is_recurring').notNull().default(false),
   oneOffStartTime: timestamp('one_off_start_time'),
-  oneOffDate: timestamp('one_off_date'),
-  recurrenceStartDate: timestamp('recurrence_start_date'),
-  recurrenceEndDate: timestamp('recurrence_end_date'),
+  oneOffDate: date('one_off_date'),
+  recurrenceStartDate: date('recurrence_start_date'),
+  recurrenceEndDate: date('recurrence_end_date'),
   userId: text('user_id').notNull(),
+  organizationId: uuid('organization_id').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const sessionSchedules = pgTable('session_schedules', {
   id: uuid('id').defaultRandom().primaryKey(),
-  templateId: uuid('template_id').references(() => sessionTemplates.id).notNull(),
+  sessionTemplateId: uuid('session_template_id').references(() => sessionTemplates.id).notNull(),
   dayOfWeek: integer('day_of_week').notNull(), // 0-6 for Sunday-Saturday
-  startTime: text('start_time').notNull(), // HH:mm format
-  endTime: text('end_time').notNull(), // HH:mm format
+  startTimeLocal: text('start_time_local').notNull(), // HH:mm format
+  isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

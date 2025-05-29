@@ -371,19 +371,31 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
 
               console.log("Creating schedule:", {
                 session_template_id: templateId,
-                time: schedule.time,
-                days: mappedDays
+                start_time_local: schedule.time,
+                day_of_week: mappedDays[0] // We'll create one schedule per day
               });
 
-              const result = await createSessionSchedule({
-                session_template_id: templateId,
-                time: schedule.time,
-                days: mappedDays,
-                start_time_local: schedule.time
-              });
+              const results = await Promise.all(
+                mappedDays.map(async (dayOfWeek) => {
+                  const result = await createSessionSchedule({
+                    session_template_id: templateId,
+                    start_time_local: schedule.time,
+                    day_of_week: mapDayStringToInt(dayOfWeek)
+                  });
 
-              console.log("Schedule creation result:", result);
-              return result;
+                  console.log("Schedule creation result:", result);
+                  return result;
+                })
+              );
+
+              // Check if any schedule creation failed
+              const failedResults = results.filter(r => !r.success);
+              if (failedResults.length > 0) {
+                const error = failedResults[0].error || "Failed to create some schedules";
+                return { success: false, error };
+              }
+
+              return { success: true };
             } catch (error) {
               console.error("Error creating individual schedule:", error);
               throw error;
