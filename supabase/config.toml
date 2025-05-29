@@ -317,3 +317,6 @@ token_refresh = 150
 sign_in_sign_ups = 30
 # Number of OTP / Magic link verifications that can be made in a 5 minute interval per IP address.
 token_verifications = 30
+
+[functions.generate-instances]
+verify_jwt = false
