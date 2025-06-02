@@ -7,7 +7,7 @@ export default function SignInPage() {
     <div className="flex min-h-screen items-center justify-center">
       <SignIn
         routing="virtual"
-        signUpUrl="/sign-up"
+        fallbackRedirectUrl="/booking"
       />
     </div>
   );

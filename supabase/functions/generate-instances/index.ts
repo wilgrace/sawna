@@ -104,7 +104,7 @@ function utcToLocal(date: Date, timezone: string): Date {
 const getCorsHeaders = () => {
   const isDevelopment = Deno.env.get("ENVIRONMENT") === "development";
   return {
-    "Access-Control-Allow-Origin": isDevelopment ? "http://localhost:3000" : "https://sawna.vercel.app",
+    "Access-Control-Allow-Origin": isDevelopment ? "http://localhost:3000" : "https://session-git-backup-before-rollback-wilgrace-gmailcoms-projects.vercel.app",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   };
