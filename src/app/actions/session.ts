@@ -28,6 +28,7 @@ interface CreateSessionTemplateParams {
   recurrence_start_date: string | null
   recurrence_end_date: string | null
   created_by: string
+  schedules?: SessionSchedule[]
 }
 
 interface CreateSessionTemplateResult {
@@ -233,6 +234,7 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
       }
     }
 
+    // Create the template first
     const { data, error } = await supabase
       .from("session_templates")
       .insert({
@@ -246,7 +248,7 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
         one_off_date: params.one_off_date,
         recurrence_start_date: params.recurrence_start_date,
         recurrence_end_date: params.recurrence_end_date,
-        created_by: userData.id, // Use the clerk_users.id instead of clerk_user_id
+        created_by: userData.id,
         organization_id: userData.organization_id
       })
       .select()
@@ -267,70 +269,60 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
       }
     }
 
+    // Create schedules if provided
+    if (params.schedules && params.schedules.length > 0) {
+      const { error: scheduleError } = await supabase
+        .from("session_schedules")
+        .insert(params.schedules.map(schedule => ({
+          ...schedule,
+          session_template_id: data.id
+        })));
+
+      if (scheduleError) {
+        console.error("Error creating schedules:", scheduleError);
+        return {
+          success: false,
+          error: `Failed to create schedules: ${scheduleError.message}`
+        };
+      }
+
+      // Verify schedules were created
+      const { data: createdSchedules, error: verifyError } = await supabase
+        .from("session_schedules")
+        .select("*")
+        .eq("session_template_id", data.id);
+
+      if (verifyError || !createdSchedules || createdSchedules.length === 0) {
+        console.error("Failed to verify schedule creation:", verifyError);
+        return {
+          success: false,
+          error: "Failed to verify schedule creation"
+        };
+      }
+    }
+
     // Trigger instance generation for recurring templates
     if (params.is_recurring) {
       try {
-        console.log("[createSessionTemplate] Starting instance generation for template:", {
-          id: data.id,
-          is_recurring: params.is_recurring,
-          start_date: params.recurrence_start_date,
-          end_date: params.recurrence_end_date
+        const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+        const functionUrl = IS_DEVELOPMENT 
+          ? 'http://localhost:54321/functions/v1/generate-instances'
+          : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/generate-instances`;
+
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({ template_id_to_process: data.id }),
         });
 
-        const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
-        console.log("[createSessionTemplate] Environment:", { IS_DEVELOPMENT });
-
-        if (IS_DEVELOPMENT) {
-          // Call local Edge Function
-          const localFunctionUrl = 'http://localhost:54321/functions/v1/generate-instances';
-          console.log("[createSessionTemplate] Calling local Edge Function at:", localFunctionUrl);
-          
-          const response = await fetch(localFunctionUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
-            },
-            body: JSON.stringify({ template_id_to_process: data.id }),
-          });
-
-          const responseText = await response.text();
-          console.log("[createSessionTemplate] Local Edge Function response:", {
-            status: response.status,
-            ok: response.ok,
-            text: responseText
-          });
-
-          if (!response.ok) {
-            console.error("[createSessionTemplate] Error calling local edge function:", responseText);
-          } else {
-            console.log("[createSessionTemplate] Local edge function invoked successfully:", responseText);
-          }
-        } else {
-          // Call remote Edge Function using Supabase client
-          console.log("[createSessionTemplate] Calling remote Edge Function");
-          const supabaseClientForFunctions = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-          const { data: functionData, error: functionError } = await supabaseClientForFunctions.functions.invoke(
-            'generate-instances',
-            {
-              body: { template_id_to_process: data.id },
-            }
-          );
-
-          if (functionError) {
-            console.error(
-              `[createSessionTemplate] Error invoking remote Edge Function for template ${data.id}:`,
-              functionError
-            );
-          } else {
-            console.log(
-              `[createSessionTemplate] Remote Edge Function invoked successfully for template ${data.id}. Response:`,
-              functionData
-            );
-          }
+        if (!response.ok) {
+          console.error("Error calling edge function:", await response.text());
         }
       } catch (error) {
-        console.error("[createSessionTemplate] Error triggering instance generation:", error);
+        console.error("Error triggering instance generation:", error);
         // Don't fail the template creation if instance generation fails
       }
     }

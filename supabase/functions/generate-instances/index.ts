@@ -13,9 +13,13 @@ console.log("DB_URL:", Deno.env.get("DB_URL") ? "Set" : "Not set");
 console.log("SERVICE_ROLE_KEY:", Deno.env.get("SERVICE_ROLE_KEY") ? "Set" : "Not set");
 console.log("TIMEZONE:", Deno.env.get("TIMEZONE") ? "Set" : "Not set");
 
-const SAUNA_TIMEZONE = Deno.env.get("TIMEZONE") || 'Europe/London'; // Configurable timezone
+const SAUNA_TIMEZONE = Deno.env.get("TIMEZONE") || 'Europe/London';
 const DB_URL = Deno.env.get("DB_URL") || "http://kong:8000";
-const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
+const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY");
+
+if (!SERVICE_ROLE_KEY) {
+  throw new Error("SERVICE_ROLE_KEY environment variable is required");
+}
 
 // Import day utilities
 const intToShortDay: Record<number, string> = {
@@ -39,7 +43,7 @@ interface SessionTemplate {
   name: string;
   is_recurring: boolean;
   is_open: boolean;
-  schedules: SessionSchedule[];
+  session_schedules: SessionSchedule[];
   recurrence_start_date: string | null;
   recurrence_end_date: string | null;
   duration_minutes: number;
@@ -57,33 +61,71 @@ interface SessionSchedule {
 
 // Helper function to convert local time to UTC
 function localToUTC(date: Date, timezone: string): Date {
-  // Parse the timezone offset
-  const timeZoneDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
-  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const offset = timeZoneDate.getTime() - utcDate.getTime();
-  
-  // Apply the offset to get the correct UTC time
-  return new Date(date.getTime() - offset);
+  try {
+    // Create a date string in the local timezone
+    const localDateStr = date.toLocaleString('en-US', { timeZone: timezone });
+    // Parse it back to get the correct UTC time
+    const utcDate = new Date(localDateStr);
+    console.log('Timezone conversion:', {
+      input: date.toISOString(),
+      timezone,
+      localDateStr,
+      utcDate: utcDate.toISOString()
+    });
+    return utcDate;
+  } catch (error) {
+    console.error('Error in localToUTC:', {
+      error,
+      date: date.toISOString(),
+      timezone
+    });
+    throw error;
+  }
 }
 
 // Helper function to convert UTC to local time
 function utcToLocal(date: Date, timezone: string): Date {
-  return new Date(date.toLocaleString('en-US', { timeZone: timezone }))
+  try {
+    const localDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+    console.log('UTC to local conversion:', {
+      input: date.toISOString(),
+      timezone,
+      localDate: localDate.toISOString()
+    });
+    return localDate;
+  } catch (error) {
+    console.error('Error in utcToLocal:', {
+      error,
+      date: date.toISOString(),
+      timezone
+    });
+    throw error;
+  }
 }
+
+// Update CORS headers based on environment
+const getCorsHeaders = () => {
+  const isDevelopment = Deno.env.get("ENVIRONMENT") === "development";
+  return {
+    "Access-Control-Allow-Origin": isDevelopment ? "http://localhost:3000" : "https://sawna.vercel.app",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+};
 
 // Create a custom serve function that bypasses auth
 const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
   return serve(async (req) => {
     // Handle CORS
     if (req.method === 'OPTIONS') {
-      return new Response('ok', { headers: corsHeaders });
+      return new Response('ok', { headers: getCorsHeaders() });
     }
 
     try {
       const response = await handler(req);
       // Ensure CORS headers are added to all responses
       const headers = new Headers(response.headers);
-      Object.entries(corsHeaders).forEach(([key, value]) => {
+      Object.entries(getCorsHeaders()).forEach(([key, value]) => {
         headers.set(key, value);
       });
       
@@ -98,7 +140,7 @@ const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
         JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error occurred" }),
         {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
         }
       );
     }
@@ -128,7 +170,7 @@ serveWithoutAuth(async (req) => {
               status: 400,
               headers: { 
                 "Content-Type": "application/json",
-                'Access-Control-Allow-Origin': '*'
+                ...getCorsHeaders()
               }
             }
           );
@@ -136,274 +178,174 @@ serveWithoutAuth(async (req) => {
       }
     } catch (e: unknown) {
       console.warn("Could not parse request body for specific template ID:", e instanceof Error ? e.message : String(e));
-      // Continue to process all if body is not as expected or not present
     }
   }
 
   try {
-    const supabaseUrl = DB_URL;
-    const supabaseKey = SERVICE_ROLE_KEY;
-
-    console.log("Using Supabase client with URL:", supabaseUrl);
-    console.log("Environment variables:", {
-      ENVIRONMENT: "development",
-      DB_URL: DB_URL,
-      SERVICE_ROLE_KEY: "Set"
+    console.log("Using Supabase client with URL:", DB_URL);
+    const supabaseClient = createClient(DB_URL, SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+        },
+      },
     });
 
-    const supabaseClient = createClient(supabaseUrl, supabaseKey);
-
-    // Build the query
-    let query = supabaseClient
+    // Query for templates
+    console.log("[Info] Querying for templates...");
+    
+    const query = supabaseClient
       .from("session_templates")
       .select(`
-        *,
-        session_schedules!session_schedules_session_template_id_fkey (
+        id,
+        name,
+        is_recurring,
+        is_open,
+        recurrence_start_date,
+        recurrence_end_date,
+        duration_minutes,
+        session_schedules (
           id,
-          time,
-          day_of_week,
           start_time_local,
+          day_of_week,
           is_active
-        ),
-        created_by,
-        organization_id
+        )
       `)
-      .eq("is_recurring", true)
-      .eq("is_open", true);
+      .eq("id", specificTemplateIdToProcess);
 
-    // If a specific template ID is provided, only process that one
-    if (specificTemplateIdToProcess) {
-      query = query.eq("id", specificTemplateIdToProcess);
+    const result = await query;
+    const templates = result.data as SessionTemplate[];
+    const error = result.error;
+
+    if (error) {
+      console.error("[Error] Database query failed:", error);
+      return new Response(
+        JSON.stringify({ error: "Failed to query templates" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders() } }
+      );
     }
 
-    console.log("Querying for templates...");
-    const { data: templates, error: templateError } = await query;
-
-    console.log("Raw query response:", { 
-      templates: templates?.map(t => ({
-        id: t.id,
-        name: t.name,
-        is_recurring: t.is_recurring,
-        is_open: t.is_open,
-        schedule_count: t.session_schedules?.length,
-        schedules: t.session_schedules?.map((s: SessionSchedule) => ({
-          id: s.id,
-          time: s.time,
-          day_of_week: s.day_of_week,
-          start_time_local: s.start_time_local,
-          is_active: s.is_active
-        }))
-      })),
-      error: templateError 
-    });
-    
-    if (templateError) {
-      console.error("Error fetching templates:", templateError);
-      throw templateError;
-    }
-    
     if (!templates || templates.length === 0) {
-      const message = specificTemplateIdToProcess
-        ? `Template ID ${specificTemplateIdToProcess} not found or not active/recurring.`
-        : "No active recurring templates found to process.";
-      console.log(message);
-      return new Response(JSON.stringify({ message }), { 
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
+      console.error("[Error] No templates found");
+      return new Response(
+        JSON.stringify({ error: "No templates found" }),
+        { status: 404, headers: { "Content-Type": "application/json", ...getCorsHeaders() } }
+      );
     }
 
-    // If processing a specific template, handle deletion of future instances
-    if (specificTemplateIdToProcess) {
-      console.log(`Processing specific template: ${specificTemplateIdToProcess}. Handling future instances...`);
-      const todayISO = new Date().toISOString();
+    console.log("[Info] Raw query response:", { templates, error });
 
-      // First, get all future instances for this template
-      const { data: futureInstances, error: fetchError } = await supabaseClient
-        .from("session_instances")
-        .select(`
-          id,
-          start_time,
-          bookings (
-            id
-          )
-        `)
-        .eq("template_id", specificTemplateIdToProcess)
-        .gte("start_time", todayISO);
-
-      if (fetchError) {
-        console.error(`Error fetching future instances for template ${specificTemplateIdToProcess}:`, fetchError.message);
-      } else {
-        // Separate instances into booked and unbooked
-        const bookedInstanceIds = futureInstances
-          ?.filter(instance => instance.bookings && instance.bookings.length > 0)
-          .map(instance => instance.id) || [];
-
-        const unbookedInstanceIds = futureInstances
-          ?.filter(instance => !instance.bookings || instance.bookings.length === 0)
-          .map(instance => instance.id) || [];
-
-        console.log(`Found ${futureInstances?.length || 0} future instances:`, {
-          booked: bookedInstanceIds.length,
-          unbooked: unbookedInstanceIds.length
+    // Process templates
+    if (templates) {
+      for (const template of templates) {
+        console.log(`[Info] Processing specific template: ${template.id}. Handling future instances...`);
+        console.log('Template details:', {
+          is_recurring: template.is_recurring,
+          is_open: template.is_open,
+          recurrence_start_date: template.recurrence_start_date,
+          recurrence_end_date: template.recurrence_end_date,
+          schedules: template.session_schedules,
+          duration_minutes: template.duration_minutes
         });
 
-        // Delete unbooked instances
-        if (unbookedInstanceIds.length > 0) {
-          const { error: deleteError } = await supabaseClient
-            .from("session_instances")
-            .delete()
-            .in("id", unbookedInstanceIds);
-
-          if (deleteError) {
-            console.error(`Error deleting unbooked instances for template ${specificTemplateIdToProcess}:`, deleteError.message);
-          } else {
-            console.log(`Successfully deleted ${unbookedInstanceIds.length} unbooked future instances for template ${specificTemplateIdToProcess}`);
-          }
+        if (!template.session_schedules || template.session_schedules.length === 0) {
+          console.log(`Template ${template.id} has no schedules.`);
+          continue;
         }
 
-        // Log booked instances that were preserved
-        if (bookedInstanceIds.length > 0) {
-          console.log(`Preserved ${bookedInstanceIds.length} booked future instances for template ${specificTemplateIdToProcess}`);
-        }
-      }
-    }
+        const generationStartDate = template.recurrence_start_date 
+          ? parseISO(template.recurrence_start_date) 
+          : new Date();
+        const generationEndDate = template.recurrence_end_date
+          ? parseISO(template.recurrence_end_date)
+          : addMonths(new Date(), 3);
 
-    console.log(`Found ${templates.length} templates to process`);
-    console.log("Template details:", templates.map(t => ({
-      id: t.id,
-      name: t.name,
-      is_recurring: t.is_recurring,
-      is_open: t.is_open,
-      schedules: t.session_schedules,
-      recurrence_start_date: t.recurrence_start_date,
-      recurrence_end_date: t.recurrence_end_date
-    })));
-    const generationLookAheadMonths = 3;
-
-    for (const template of templates) {
-      console.log(`Processing template: ${template.name} (ID: ${template.id})`);
-      console.log('Template details:', {
-        is_recurring: template.is_recurring,
-        is_open: template.is_open,
-        recurrence_start_date: template.recurrence_start_date,
-        recurrence_end_date: template.recurrence_end_date,
-        schedules: template.session_schedules,
-        duration_minutes: template.duration_minutes
-      });
-
-      if (!template.session_schedules || template.session_schedules.length === 0) {
-        console.log(`Template ${template.id} has no schedules.`);
-        continue;
-      }
-
-      // Log each schedule's details
-      template.session_schedules.forEach((schedule: { time: string; day_of_week: number; start_time_local: string }, index: number) => {
-        console.log(`Schedule ${index + 1} details:`, {
-          time: schedule.time,
-          day_of_week: schedule.day_of_week,
-          start_time_local: schedule.start_time_local
+        console.log('Generation date range:', {
+          start: formatISO(generationStartDate),
+          end: formatISO(generationEndDate),
+          daysToGenerate: Math.ceil((generationEndDate.getTime() - generationStartDate.getTime()) / (1000 * 60 * 60 * 24))
         });
-      });
 
-      const generationStartDate = template.recurrence_start_date 
-        ? parseISO(template.recurrence_start_date) 
-        : new Date();
-      const generationEndDate = template.recurrence_end_date
-        ? parseISO(template.recurrence_end_date)
-        : addMonths(new Date(), generationLookAheadMonths);
-
-      console.log('Generation date range:', {
-        start: formatISO(generationStartDate),
-        end: formatISO(generationEndDate),
-        daysToGenerate: Math.ceil((generationEndDate.getTime() - generationStartDate.getTime()) / (1000 * 60 * 60 * 24))
-      });
-
-      // Find the first occurrence of any schedule's day after the start date
-      let currentDate = generationStartDate;
-      const scheduleDays = template.session_schedules.map((s: SessionSchedule) => s.day_of_week);
-      
-      // If the start date's day is not in the schedule days, find the next occurrence
-      while (!scheduleDays.includes(getDay(currentDate))) {
-        currentDate = addDays(currentDate, 1);
-      }
-
-      let instancesCreated = 0;
-
-      while (currentDate <= generationEndDate) {
-        const currentDayOfWeekInteger = getDay(currentDate);
-        const currentDayName = intToShortDay[currentDayOfWeekInteger];
+        // Find the first occurrence of any schedule's day after the start date
+        let currentDate = generationStartDate;
+        const scheduleDays = template.session_schedules.map((s: SessionSchedule) => s.day_of_week);
         
-        for (const schedule of template.session_schedules) {
-          const matchesDay = schedule.day_of_week === currentDayOfWeekInteger;
+        // If the start date's day is not in the schedule days, find the next occurrence
+        while (!scheduleDays.includes(getDay(currentDate))) {
+          currentDate = addDays(currentDate, 1);
+        }
+
+        let instancesCreated = 0;
+
+        while (currentDate <= generationEndDate) {
+          const currentDayOfWeekInteger = getDay(currentDate);
+          const currentDayName = intToShortDay[currentDayOfWeekInteger];
           
-          if (matchesDay) {
-            // Parse the local time from the schedule
-            const [hours, minutes] = schedule.start_time_local.split(':').map(Number);
+          for (const schedule of template.session_schedules) {
+            const matchesDay = schedule.day_of_week === currentDayOfWeekInteger;
             
-            // Create local date with time
-            let localDateWithTime = set(currentDate, {
-              hours,
-              minutes,
-              seconds: 0,
-              milliseconds: 0
-            });
-
-            // Convert to UTC using the timezone
-            const instanceStartTimeUTC = localToUTC(localDateWithTime, SAUNA_TIMEZONE);
-            const instanceEndTimeUTC = addMinutes(instanceStartTimeUTC, template.duration_minutes);
-
-            // Log the time conversion for debugging
-            console.log(`Time conversion for ${template.name}:`, {
-              localTime: formatISO(localDateWithTime),
-              utcTime: formatISO(instanceStartTimeUTC),
-              timezone: SAUNA_TIMEZONE,
-              dayOfWeek: currentDayOfWeekInteger,
-              dayName: currentDayName,
-              scheduleTime: schedule.start_time_local
-            });
-
-            // Check if an instance already exists for this time
-            const { data: existingInstance, error: checkError } = await supabaseClient
-              .from("session_instances")
-              .select("id, start_time, end_time")
-              .eq("template_id", template.id)
-              .eq("start_time", formatISO(instanceStartTimeUTC))
-              .single();
-
-            if (checkError && checkError.code !== 'PGRST116') {
-              console.error(`Error checking for existing instance: ${checkError.message}`);
-              continue;
-            }
-
-            if (existingInstance) {
-              console.log(`Instance already exists for ${template.id} at ${formatISO(instanceStartTimeUTC)}`);
-              continue;
-            }
-
-            // Create new instance
-            const { error: insertError } = await supabaseClient
-              .from("session_instances")
-              .insert({
-                template_id: template.id,
-                start_time: formatISO(instanceStartTimeUTC),
-                end_time: formatISO(instanceEndTimeUTC),
-                status: "scheduled",
-                organization_id: template.organization_id
+            if (matchesDay) {
+              // Parse the local time from the schedule
+              const [hours, minutes] = schedule.start_time_local.split(':').map(Number);
+              
+              // Create local date with time
+              let localDateWithTime = set(currentDate, {
+                hours,
+                minutes,
+                seconds: 0,
+                milliseconds: 0
               });
 
-            if (insertError) {
-              console.error(`Error creating instance: ${insertError.message}`);
-              continue;
-            }
+              // Convert to UTC using the timezone
+              const instanceStartTimeUTC = localToUTC(localDateWithTime, SAUNA_TIMEZONE);
+              const instanceEndTimeUTC = addMinutes(instanceStartTimeUTC, template.duration_minutes);
 
-            console.log(`Created instance for ${template.id} at ${formatISO(instanceStartTimeUTC)}`);
-            instancesCreated++;
+              // Check if an instance already exists for this time
+              const { data: existingInstance, error: checkError } = await supabaseClient
+                .from("session_instances")
+                .select("id, start_time, end_time")
+                .eq("template_id", template.id)
+                .eq("start_time", formatISO(instanceStartTimeUTC))
+                .single();
+
+              if (checkError && checkError.code !== 'PGRST116') {
+                console.error(`Error checking for existing instance: ${checkError.message}`);
+                continue;
+              }
+
+              if (existingInstance) {
+                console.log(`Instance already exists for ${template.id} at ${formatISO(instanceStartTimeUTC)}`);
+                continue;
+              }
+
+              // Create new instance
+              const { error: insertError } = await supabaseClient
+                .from("session_instances")
+                .insert({
+                  template_id: template.id,
+                  start_time: formatISO(instanceStartTimeUTC),
+                  end_time: formatISO(instanceEndTimeUTC),
+                  status: "scheduled",
+                  organization_id: template.organization_id
+                });
+
+              if (insertError) {
+                console.error(`Error creating instance for template ${template.id}:`, insertError);
+                continue;
+              }
+
+              console.log(`Created instance for ${template.id} at ${formatISO(instanceStartTimeUTC)}`);
+              instancesCreated++;
+            }
           }
+          currentDate = addDays(currentDate, 1);
         }
-        currentDate = addDays(currentDate, 1);
+        console.log(`Finished processing template ${template.id}. Created ${instancesCreated} instances.`);
       }
-      console.log(`Finished processing template ${template.id}. Created ${instancesCreated} instances.`);
     }
 
     console.log(`Successfully processed all templates`);
@@ -413,7 +355,7 @@ serveWithoutAuth(async (req) => {
     }), {
       headers: { 
         "Content-Type": "application/json",
-        'Access-Control-Allow-Origin': '*'
+        ...getCorsHeaders()
       },
       status: 200
     });
@@ -425,7 +367,7 @@ serveWithoutAuth(async (req) => {
     }), {
       headers: { 
         "Content-Type": "application/json",
-        'Access-Control-Allow-Origin': '*'
+        ...getCorsHeaders()
       },
       status: 500
     });
