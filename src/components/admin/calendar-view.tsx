@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { List, ChevronLeft, ChevronRight, Calendar, ChevronDown } from "lucide-react"
+import { List, ChevronLeft, ChevronRight, Calendar, ChevronDown, RefreshCw } from "lucide-react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfWeek as dateFnsStartOfWeek, endOfWeek as dateFnsEndOfWeek, startOfDay, endOfDay, getDay } from "date-fns"
 import { SessionTemplate } from "@/types/session"
 import { cn } from "@/lib/utils"
@@ -417,12 +417,11 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Session Template</TableHead>
+                <TableHead>Name</TableHead>
                 <TableHead>Schedule</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Capacity</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -435,15 +434,33 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                   <TableCell className="font-medium">{template.name}</TableCell>
                   <TableCell>
                     {template.schedules && template.schedules.length > 0 ? (
-                      <div className="text-sm">
-                        {template.schedules.map((schedule, idx) => (
-                          <div key={idx}>
-                            {schedule.days.join(', ')} at {schedule.time}
-                          </div>
-                        ))}
+                      <div className="text-sm flex items-start gap-2">
+                        <RefreshCw className="h-4 w-4 mt-1 flex-shrink-0" />
+                        <div>
+                          {template.schedules.map((schedule, idx) => {
+                            const days = schedule.days.map(day => {
+                              const shortDay = day.slice(0, 3).toLowerCase()
+                              return shortDay.charAt(0).toUpperCase() + shortDay.slice(1)
+                            }).join(', ')
+                            return (
+                              <div key={idx}>
+                                {schedule.time} {days}
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                     ) : template.instances && template.instances.length > 0 ? (
-                      "One-time sessions"
+                      <div className="text-sm flex items-start gap-2">
+                        <Calendar className="h-4 w-4 mt-1 flex-shrink-0" />
+                        <div>
+                          {template.instances.map((instance, idx) => (
+                            <div key={idx}>
+                              {format(new Date(instance.start_time), 'd MMM')} at {format(new Date(instance.start_time), 'HH:mm')}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : (
                       "No schedule"
                     )}
@@ -454,11 +471,6 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                     <Badge variant={template.is_open ? "success" : "secondary"}>
                       {template.is_open ? "Open" : "Closed"}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm">
-                      Edit
-                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,7 +4,10 @@ import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 export const SAUNA_TIMEZONE = 'Europe/London';
 
 export function localToUTC(date: Date, timezone: string): Date {
-  return new Date(formatInTimeZone(date, timezone, "yyyy-MM-dd'T'HH:mm:ssXXX"));
+  // Create a date string in ISO format with the timezone offset
+  const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd'T'HH:mm:ssXXX");
+  // Parse it back to get the correct UTC time
+  return parseISO(dateStr);
 }
 
 export function utcToLocal(date: Date, timezone: string): Date {

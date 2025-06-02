@@ -62,14 +62,11 @@ interface SessionSchedule {
 // Helper function to convert local time to UTC
 function localToUTC(date: Date, timezone: string): Date {
   try {
-    // Create a date string in the local timezone
-    const localDateStr = date.toLocaleString('en-US', { timeZone: timezone });
-    // Parse it back to get the correct UTC time
-    const utcDate = new Date(localDateStr);
+    // Use zonedTimeToUtc to properly convert from local timezone to UTC
+    const utcDate = zonedTimeToUtc(date, timezone);
     console.log('Timezone conversion:', {
       input: date.toISOString(),
       timezone,
-      localDateStr,
       utcDate: utcDate.toISOString()
     });
     return utcDate;
@@ -86,7 +83,7 @@ function localToUTC(date: Date, timezone: string): Date {
 // Helper function to convert UTC to local time
 function utcToLocal(date: Date, timezone: string): Date {
   try {
-    const localDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+    const localDate = utcToZonedTime(date, timezone);
     console.log('UTC to local conversion:', {
       input: date.toISOString(),
       timezone,
