@@ -657,7 +657,6 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
             id: booking.id,
             number_of_spots: booking.number_of_spots || 1,
             user: {
-              id: user?.id || '',
               clerk_user_id: user?.clerk_user_id || ''
             }
           };
@@ -1462,7 +1461,6 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
             id: booking.id,
             number_of_spots: booking.number_of_spots || 1,
             user: {
-              id: user?.id || '',
               clerk_user_id: user?.clerk_user_id || ''
             }
           };
@@ -1749,7 +1747,6 @@ export async function getBookingDetails(bookingId: string) {
           id: typedBookingData.id,
           number_of_spots: typedBookingData.number_of_spots,
           user: {
-            id: typedBookingData.user.id,
             clerk_user_id: typedBookingData.user.clerk_user_id
           }
         }]
