@@ -61,12 +61,12 @@ export async function saveSessionTemplate(
     }
 
     // --- Manage Schedules ---
-    await db.delete(sessionSchedules).where(eq(sessionSchedules.templateId, savedTemplateId));
+    await db.delete(sessionSchedules).where(eq(sessionSchedules.sessionTemplateId, savedTemplateId));
 
     if (schedulesData && schedulesData.length > 0) {
       const schedulesToInsert = schedulesData.map((schedule) => ({
         ...schedule,
-        templateId: savedTemplateId,
+        sessionTemplateId: savedTemplateId,
       }));
       await db.insert(sessionSchedules).values(schedulesToInsert);
     }
