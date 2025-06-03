@@ -1649,10 +1649,6 @@ export async function getBookingDetails(bookingId: string) {
         number_of_spots,
         notes,
         user_id,
-        user:clerk_users!user_id (
-          id,
-          clerk_user_id
-        ),
         session_instance:session_instances!inner (
           id,
           start_time,
@@ -1687,16 +1683,29 @@ export async function getBookingDetails(bookingId: string) {
 
     console.log("Booking data found:", bookingData)
 
+    // Get the user data separately
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("id, clerk_user_id")
+      .eq("id", bookingData.user_id)
+      .single()
+
+    if (userError) {
+      console.error("Error fetching user:", userError)
+      return { success: false, error: "Failed to load user data" }
+    }
+
+    if (!userData) {
+      console.error("No user found for ID:", bookingData.user_id)
+      return { success: false, error: "User not found" }
+    }
+
     // Type assertion for the nested structure
     type BookingWithInstance = {
       id: string;
       number_of_spots: number;
       notes: string | null;
       user_id: string;
-      user: {
-        id: string;
-        clerk_user_id: string;
-      };
       session_instance: {
         id: string;
         start_time: string;
@@ -1747,7 +1756,7 @@ export async function getBookingDetails(bookingId: string) {
           id: typedBookingData.id,
           number_of_spots: typedBookingData.number_of_spots,
           user: {
-            clerk_user_id: typedBookingData.user.clerk_user_id
+            clerk_user_id: userData.clerk_user_id
           }
         }]
       }]
@@ -1761,7 +1770,10 @@ export async function getBookingDetails(bookingId: string) {
           number_of_spots: typedBookingData.number_of_spots,
           notes: typedBookingData.notes,
           user_id: typedBookingData.user_id,
-          user: typedBookingData.user
+          user: {
+            id: userData.id,
+            clerk_user_id: userData.clerk_user_id
+          }
         },
         session: transformedSession,
         startTime: new Date(sessionInstance.start_time)
