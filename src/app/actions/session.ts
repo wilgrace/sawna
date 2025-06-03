@@ -1672,7 +1672,13 @@ export async function getBookingDetails(bookingId: string) {
       .single()
 
     if (bookingError) {
-      console.error("Error fetching booking:", bookingError)
+      console.error("Error fetching booking:", {
+        error: bookingError,
+        message: bookingError.message,
+        details: bookingError.details,
+        hint: bookingError.hint,
+        code: bookingError.code
+      })
       return { success: false, error: "Failed to load booking" }
     }
 
@@ -1681,7 +1687,11 @@ export async function getBookingDetails(bookingId: string) {
       return { success: false, error: "Booking not found" }
     }
 
-    console.log("Booking data found:", bookingData)
+    console.log("Booking data found:", {
+      id: bookingData.id,
+      user_id: bookingData.user_id,
+      number_of_spots: bookingData.number_of_spots
+    })
 
     // Get the user data separately using the user_id from the booking
     const { data: userData, error: userError } = await supabase
@@ -1691,14 +1701,32 @@ export async function getBookingDetails(bookingId: string) {
       .single()
 
     if (userError) {
-      console.error("Error fetching user:", userError)
+      console.error("Error fetching user:", {
+        error: userError,
+        message: userError.message,
+        details: userError.details,
+        hint: userError.hint,
+        code: userError.code,
+        query: {
+          table: "clerk_users",
+          filter: { id: bookingData.user_id }
+        }
+      })
       return { success: false, error: "Failed to load user data" }
     }
 
     if (!userData) {
-      console.error("No user found for ID:", bookingData.user_id)
+      console.error("No user found for ID:", {
+        user_id: bookingData.user_id,
+        booking_id: bookingId
+      })
       return { success: false, error: "User not found" }
     }
+
+    console.log("User data found:", {
+      id: userData.id,
+      clerk_user_id: userData.clerk_user_id
+    })
 
     // Type assertion for the nested structure
     type BookingWithInstance = {
