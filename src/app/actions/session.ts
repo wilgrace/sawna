@@ -1683,7 +1683,7 @@ export async function getBookingDetails(bookingId: string) {
 
     console.log("Booking data found:", bookingData)
 
-    // Get the user data separately
+    // Get the user data separately using the user_id from the booking
     const { data: userData, error: userError } = await supabase
       .from("clerk_users")
       .select("id, clerk_user_id")
