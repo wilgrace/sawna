@@ -362,8 +362,11 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
         const scheduleResults = await Promise.all(
           schedules.map(async (schedule) => {
             try {
-              // Keep the days in short format (mon, tue, etc.)
-              const mappedDays = schedule.days.map(day => day.toLowerCase());
+              // Defensive: ensure days is always an array
+              const mappedDays = (schedule.days || []).map(day => day.toLowerCase());
+              if (mappedDays.length === 0) {
+                throw new Error("No days selected for schedule.");
+              }
               if (mappedDays.some(d => !isValidDayString(d))) {
                 console.error("Invalid day in schedule.days:", schedule.days);
                 throw new Error("Invalid day selected in schedule.");
@@ -378,8 +381,7 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
               const result = await createSessionSchedule({
                 session_template_id: templateId,
                 time: schedule.time,
-                days: mappedDays,
-                start_time_local: schedule.time
+                days: mappedDays
               });
 
               console.log("Schedule creation result:", result);

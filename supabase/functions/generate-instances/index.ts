@@ -233,7 +233,7 @@ serveWithoutAuth(async (req) => {
         duration_minutes,
         session_schedules (
           id,
-          start_time_local,
+          time,
           day_of_week,
           is_active
         )
@@ -313,7 +313,7 @@ serveWithoutAuth(async (req) => {
             
             if (matchesDay) {
               // Parse the local time from the schedule
-              const [hours, minutes] = schedule.start_time_local.split(':').map(Number);
+              const [hours, minutes] = schedule.time.split(':').map(Number);
               
               // Create local date with time
               let localDateWithTime = set(currentDate, {

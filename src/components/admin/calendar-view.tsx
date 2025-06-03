@@ -200,25 +200,47 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
     }
 
     // Process one-off instances
-    if (!session.is_recurring && session.instances) {
-      session.instances.forEach((instance) => {
-        // Parse the ISO string and create a new Date object
-        const startTime = new Date(instance.start_time);
-        const endTime = new Date(instance.end_time);
+    if (!session.is_recurring) {
+      if (session.instances) {
+        session.instances.forEach((instance) => {
+          // Parse the ISO string and create a new Date object
+          const startTime = new Date(instance.start_time);
+          const endTime = new Date(instance.end_time);
+
+          // Format the time in local timezone
+          const formattedStartTime = format(startTime, 'h:mm a');
+          const formattedEndTime = format(endTime, 'h:mm a');
+
+          // Create events with the UTC times directly
+          events.push({
+            id: instance.id,
+            title: `${formattedStartTime} – ${formattedEndTime}: ${session.name}`,
+            start: startTime,
+            end: endTime,
+            resource: session
+          });
+        });
+      } else if (session.one_off_date && session.one_off_start_time) {
+        // Handle one-off sessions without instances
+        const [hours, minutes] = session.one_off_start_time.split(':').map(Number);
+        const startTime = new Date(session.one_off_date);
+        startTime.setHours(hours, minutes, 0, 0);
+        
+        const endTime = new Date(startTime);
+        endTime.setMinutes(endTime.getMinutes() + session.duration_minutes);
 
         // Format the time in local timezone
         const formattedStartTime = format(startTime, 'h:mm a');
         const formattedEndTime = format(endTime, 'h:mm a');
 
-        // Create events with the UTC times directly
         events.push({
-          id: instance.id,
+          id: `${session.id}-one-off`,
           title: `${formattedStartTime} – ${formattedEndTime}: ${session.name}`,
           start: startTime,
           end: endTime,
           resource: session
         });
-      });
+      }
     }
 
     return events;
@@ -433,7 +455,7 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                 >
                   <TableCell className="font-medium">{template.name}</TableCell>
                   <TableCell>
-                    {template.schedules && template.schedules.length > 0 ? (
+                    {template.is_recurring && template.schedules && template.schedules.length > 0 ? (
                       <div className="text-sm flex items-start gap-2">
                         <RefreshCw className="h-4 w-4 mt-1 flex-shrink-0" />
                         <div>
@@ -448,6 +470,13 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                               </div>
                             )
                           })}
+                        </div>
+                      </div>
+                    ) : !template.is_recurring && template.one_off_date && template.one_off_start_time ? (
+                      <div className="text-sm flex items-start gap-2">
+                        <Calendar className="h-4 w-4 mt-1 flex-shrink-0" />
+                        <div>
+                          {format(new Date(`${template.one_off_date}T${template.one_off_start_time}`), 'd MMM')} at {format(new Date(`${template.one_off_date}T${template.one_off_start_time}`), 'HH:mm')}
                         </div>
                       </div>
                     ) : template.instances && template.instances.length > 0 ? (

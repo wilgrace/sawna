@@ -54,7 +54,6 @@ interface CreateSessionScheduleParams {
   session_template_id: string
   time: string
   days: string[]
-  start_time_local: string
 }
 
 interface CreateSessionScheduleResult {
@@ -151,6 +150,7 @@ interface DBSessionTemplate {
   is_open: boolean;
   is_recurring: boolean;
   one_off_start_time: string | null;
+  one_off_date: string | null;
   recurrence_start_date: string | null;
   recurrence_end_date: string | null;
   created_at: string;
@@ -489,7 +489,6 @@ export async function createSessionSchedule(params: CreateSessionScheduleParams)
         .from("session_schedules")
         .insert({
           session_template_id: params.session_template_id,
-          start_time_local: params.time,
           day_of_week: dayOfWeek,
           time: params.time,
           is_active: true
@@ -561,6 +560,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
         is_open,
         is_recurring,
         one_off_start_time,
+        one_off_date,
         recurrence_start_date,
         recurrence_end_date,
         created_at,
@@ -586,11 +586,11 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
       .select(`
         id,
         session_template_id,
-        start_time_local,
         day_of_week,
         is_active,
         created_at,
-        updated_at
+        updated_at,
+        time
       `)
       .in('session_template_id', templateIds)
 
@@ -630,7 +630,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
 
       // Group schedules by time
       const scheduleGroups: Record<string, SessionSchedule> = templateSchedules.reduce((groups, schedule) => {
-        const time = schedule.start_time_local?.substring(0, 5)
+        const time = schedule.time?.substring(0, 5)
         if (!groups[time]) {
           groups[time] = {
             id: schedule.id,
@@ -679,6 +679,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
         is_open: template.is_open,
         is_recurring: template.is_recurring ?? false,
         one_off_start_time: template.one_off_start_time,
+        one_off_date: template.one_off_date,
         recurrence_start_date: template.recurrence_start_date,
         recurrence_end_date: template.recurrence_end_date,
         created_at: template.created_at,
@@ -760,6 +761,10 @@ export async function getSession(id: string): Promise<{ data: SessionTemplate | 
         duration_minutes,
         is_open,
         is_recurring,
+        one_off_start_time,
+        one_off_date,
+        recurrence_start_date,
+        recurrence_end_date,
         created_at,
         updated_at,
         created_by,
@@ -784,11 +789,11 @@ export async function getSession(id: string): Promise<{ data: SessionTemplate | 
       .select(`
         id,
         session_template_id,
-        start_time_local,
         day_of_week,
         is_active,
         created_at,
-        updated_at
+        updated_at,
+        time
       `)
       .eq("session_template_id", id);
 
@@ -816,7 +821,7 @@ export async function getSession(id: string): Promise<{ data: SessionTemplate | 
 
     // Group schedules by time
     const scheduleGroups: Record<string, SessionSchedule> = (schedules || []).reduce((groups, schedule) => {
-      const time = schedule.start_time_local?.substring(0, 5);
+      const time = schedule.time;
       if (!groups[time]) {
         groups[time] = {
           id: schedule.id,
@@ -1348,6 +1353,7 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
         is_open,
         is_recurring,
         one_off_start_time,
+        one_off_date,
         recurrence_start_date,
         recurrence_end_date,
         created_at,
@@ -1381,11 +1387,11 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
       .select(`
         id,
         session_template_id,
-        start_time_local,
         day_of_week,
         is_active,
         created_at,
-        updated_at
+        updated_at,
+        time
       `)
       .in('session_template_id', templateIds)
 
@@ -1427,7 +1433,7 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
 
       // Group schedules by time
       const scheduleGroups: Record<string, SessionSchedule> = templateSchedules.reduce((groups, schedule) => {
-        const time = schedule.start_time_local?.substring(0, 5)
+        const time = schedule.time?.substring(0, 5)
         if (!groups[time]) {
           groups[time] = {
             id: schedule.id,

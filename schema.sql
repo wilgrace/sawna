@@ -205,15 +205,12 @@ ALTER TABLE "public"."session_instances" OWNER TO "postgres";
 CREATE TABLE IF NOT EXISTS "public"."session_schedules" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "session_template_id" "uuid" NOT NULL,
-    "start_time_local" time without time zone NOT NULL,
     "day_of_week" integer,
     "is_active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "template_id" "uuid" NOT NULL,
-    "time" "text" NOT NULL,
-    "days" "text"[],
-    CONSTRAINT "recurring_schedules_day_of_week_check" CHECK ((("day_of_week" >= 0) AND ("day_of_week" <= 6)))
+    "time" time NOT NULL,
+    CONSTRAINT "recurring_schedules_day_of_week_check" CHECK (("day_of_week" >= 0 AND "day_of_week" <= 6))
 );
 
 

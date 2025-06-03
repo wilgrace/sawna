@@ -19,10 +19,10 @@ export const sessionTemplates = pgTable('session_templates', {
 
 export const sessionSchedules = pgTable('session_schedules', {
   id: uuid('id').defaultRandom().primaryKey(),
-  templateId: uuid('template_id').references(() => sessionTemplates.id).notNull(),
+  sessionTemplateId: uuid('session_template_id').references(() => sessionTemplates.id).notNull(),
   dayOfWeek: integer('day_of_week').notNull(), // 0-6 for Sunday-Saturday
-  startTime: text('start_time').notNull(), // HH:mm format
-  endTime: text('end_time').notNull(), // HH:mm format
+  time: text('time').notNull(), // type: time in DB, use string in TS
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
