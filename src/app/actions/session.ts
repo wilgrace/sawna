@@ -1649,6 +1649,12 @@ export async function getBookingDetails(bookingId: string) {
       .select(`
         id,
         number_of_spots,
+        notes,
+        user_id,
+        user:clerk_users!user_id (
+          id,
+          clerk_user_id
+        ),
         session_instance:session_instances!inner (
           id,
           start_time,
@@ -1660,7 +1666,11 @@ export async function getBookingDetails(bookingId: string) {
             capacity,
             duration_minutes,
             is_open,
-            is_recurring
+            is_recurring,
+            created_at,
+            updated_at,
+            created_by,
+            organization_id
           )
         )
       `)
@@ -1683,6 +1693,12 @@ export async function getBookingDetails(bookingId: string) {
     type BookingWithInstance = {
       id: string;
       number_of_spots: number;
+      notes: string | null;
+      user_id: string;
+      user: {
+        id: string;
+        clerk_user_id: string;
+      };
       session_instance: {
         id: string;
         start_time: string;
@@ -1728,7 +1744,15 @@ export async function getBookingDetails(bookingId: string) {
         start_time: sessionInstance.start_time,
         end_time: sessionInstance.end_time,
         status: "scheduled",
-        template_id: sessionTemplate.id
+        template_id: sessionTemplate.id,
+        bookings: [{
+          id: typedBookingData.id,
+          number_of_spots: typedBookingData.number_of_spots,
+          user: {
+            id: typedBookingData.user.id,
+            clerk_user_id: typedBookingData.user.clerk_user_id
+          }
+        }]
       }]
     }
 
@@ -1737,7 +1761,10 @@ export async function getBookingDetails(bookingId: string) {
       data: {
         booking: {
           id: typedBookingData.id,
-          number_of_spots: typedBookingData.number_of_spots
+          number_of_spots: typedBookingData.number_of_spots,
+          notes: typedBookingData.notes,
+          user_id: typedBookingData.user_id,
+          user: typedBookingData.user
         },
         session: transformedSession,
         startTime: new Date(sessionInstance.start_time)

@@ -156,7 +156,7 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
         }
         // Use internalUserId for booking check
         const userBooking = instance.bookings?.find(booking => {
-          return booking.user && 'id' in booking.user && booking.user.id === internalUserId;
+          return booking.user && booking.user.clerk_user_id === user?.id;
         });
         return {
           id: instance.id,

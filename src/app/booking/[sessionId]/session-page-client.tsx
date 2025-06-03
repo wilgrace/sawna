@@ -99,7 +99,7 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
               // Check for a booking for this user and instance
               const { data: booking, error: bookingError } = await supabase
                 .from('bookings')
-                .select('id')
+                .select('id, number_of_spots, notes')
                 .eq('user_id', userData.id)
                 .eq('session_instance_id', instance.id)
                 .eq('status', 'confirmed')
@@ -134,6 +134,11 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
             const { booking, session, startTime: bookingStartTime } = result.data
             console.log("Successfully fetched booking:", { booking, session })
             
+            // Verify that the booking belongs to the current user
+            if (!booking.user || booking.user.clerk_user_id !== user.id) {
+              throw new Error("You don't have permission to edit this booking")
+            }
+            
             // Set booking details and session
             setBookingDetails(booking)
             setSession(session as unknown as SessionTemplate)
@@ -144,13 +149,13 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
             })
           } catch (error: any) {
             console.error("Error fetching booking details:", error)
+            setError(error.message)
             setDebugInfo((prev: any) => ({ 
               ...(prev || {}), 
               error: error.message,
               bookingId,
               userId: user.id
             }))
-            throw error
           }
         } else {
           // Fetch session template using the same approach as getBookingDetails
