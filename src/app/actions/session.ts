@@ -1633,183 +1633,74 @@ export async function deleteBooking(booking_id: string) {
 
 export async function getBookingDetails(bookingId: string) {
   try {
-    console.log("\n=== getBookingDetails Debug ===");
-    console.log("Input parameters:", { bookingId });
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
     // First get the booking with its session instance and template
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .select(`
-        id,
-        number_of_spots,
-        notes,
-        user_id,
-        session_instance:session_instances!inner (
-          id,
-          start_time,
-          end_time,
-          template:session_templates!inner (
-            id,
-            name,
-            description,
-            capacity,
-            duration_minutes,
-            is_open,
-            is_recurring,
-            created_at,
-            updated_at,
-            created_by,
-            organization_id
-          )
+        *,
+        session_instance:session_instances (
+          *,
+          template:session_templates (*)
         )
       `)
       .eq("id", bookingId)
-      .single()
+      .single();
 
     if (bookingError) {
-      console.error("Error fetching booking:", {
-        error: bookingError,
-        message: bookingError.message,
-        details: bookingError.details,
-        hint: bookingError.hint,
-        code: bookingError.code
-      })
-      return { success: false, error: "Failed to load booking" }
+      console.error("Error fetching booking:", bookingError);
+      throw new Error("Failed to fetch booking details");
     }
 
     if (!bookingData) {
-      console.error("No booking found with ID:", bookingId)
-      return { success: false, error: "Booking not found" }
+      throw new Error("No bookings found");
     }
 
-    console.log("Booking data found:", {
-      id: bookingData.id,
-      user_id: bookingData.user_id,
-      number_of_spots: bookingData.number_of_spots
-    })
-
-    // Get the user data separately using the user_id from the booking
+    // Then get the user data using clerk_user_id
     const { data: userData, error: userError } = await supabase
       .from("clerk_users")
-      .select("id, clerk_user_id")
-      .eq("id", bookingData.user_id)
-      .single()
+      .select("*")
+      .eq("clerk_user_id", bookingData.user_id)
+      .single();
 
     if (userError) {
-      console.error("Error fetching user:", {
-        error: userError,
-        message: userError.message,
-        details: userError.details,
-        hint: userError.hint,
-        code: userError.code,
-        query: {
-          table: "clerk_users",
-          filter: { id: bookingData.user_id }
-        }
-      })
-      return { success: false, error: "Failed to load user data" }
+      console.error("Error fetching user:", userError);
+      throw new Error("Failed to fetch user details");
     }
 
     if (!userData) {
-      console.error("No user found for ID:", {
-        user_id: bookingData.user_id,
-        booking_id: bookingId
-      })
-      return { success: false, error: "User not found" }
+      throw new Error("User not found");
     }
 
-    console.log("User data found:", {
-      id: userData.id,
-      clerk_user_id: userData.clerk_user_id
-    })
-
-    // Type assertion for the nested structure
-    type BookingWithInstance = {
-      id: string;
-      number_of_spots: number;
-      notes: string | null;
-      user_id: string;
+    // Transform the response to match the expected format
+    const response = {
+      id: bookingData.id,
       session_instance: {
-        id: string;
-        start_time: string;
-        end_time: string;
-        template: {
-          id: string;
-          name: string;
-          description: string | null;
-          capacity: number;
-          duration_minutes: number;
-          is_open: boolean;
-          is_recurring: boolean;
-          created_at: string;
-          updated_at: string;
-          created_by: string;
-          organization_id: string;
-        };
-      };
+        id: bookingData.session_instance.id,
+        template: bookingData.session_instance.template,
+        start_time: bookingData.session_instance.start_time,
+        end_time: bookingData.session_instance.end_time,
+        status: bookingData.session_instance.status,
+        created_at: bookingData.session_instance.created_at,
+        updated_at: bookingData.session_instance.updated_at,
+      },
+      user: {
+        id: userData.id,
+        email: userData.email,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        phone: userData.phone,
+        created_at: userData.created_at,
+        updated_at: userData.updated_at,
+      },
+      status: bookingData.status,
+      created_at: bookingData.created_at,
+      updated_at: bookingData.updated_at,
     };
 
-    const typedBookingData = bookingData as unknown as BookingWithInstance;
-
-    // The session_instance is now a single object, not an array
-    const sessionInstance = typedBookingData.session_instance
-    if (!sessionInstance) {
-      console.error("No session instance found for booking")
-      return { success: false, error: "Session instance not found" }
-    }
-
-    // The template is now directly accessible from the session instance
-    const sessionTemplate = sessionInstance.template
-    if (!sessionTemplate) {
-      console.error("No session template found for instance")
-      return { success: false, error: "Session template not found" }
-    }
-
-    // Transform the data to match the expected types
-    const transformedSession: SessionTemplate = {
-      ...sessionTemplate,
-      schedules: [],
-      instances: [{
-        id: sessionInstance.id,
-        start_time: sessionInstance.start_time,
-        end_time: sessionInstance.end_time,
-        status: "scheduled",
-        template_id: sessionTemplate.id,
-        bookings: [{
-          id: typedBookingData.id,
-          number_of_spots: typedBookingData.number_of_spots,
-          user: {
-            clerk_user_id: userData.clerk_user_id
-          }
-        }]
-      }]
-    }
-
-    return {
-      success: true,
-      data: {
-        booking: {
-          id: typedBookingData.id,
-          number_of_spots: typedBookingData.number_of_spots,
-          notes: typedBookingData.notes,
-          user_id: typedBookingData.user_id,
-          user: {
-            id: userData.id,
-            clerk_user_id: userData.clerk_user_id
-          }
-        },
-        session: transformedSession,
-        startTime: new Date(sessionInstance.start_time)
-      }
-    }
+    return response;
   } catch (error) {
-    console.error("Error in getBookingDetails:", error)
-    return { success: false, error: "An error occurred while loading the booking" }
+    console.error("Error in getBookingDetails:", error);
+    throw error;
   }
 }
 
