@@ -21,6 +21,7 @@ import { MobileCalendarView } from "./mobile-calendar-view"
 import { MobileSessionList } from "./mobile-session-list"
 import { useUser } from "@clerk/nextjs"
 import { Badge } from "@/components/ui/badge"
+import { createClient } from '@supabase/supabase-js'
 
 // Add custom styles to hide rbc-event-label
 const calendarStyles = `
@@ -111,6 +112,26 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
   const [currentView, setCurrentView] = useState<View>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const [internalUserId, setInternalUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchInternalUserId = async () => {
+      if (!user?.id) return
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      const { data, error } = await supabase
+        .from('clerk_users')
+        .select('id')
+        .eq('clerk_user_id', user.id)
+        .single()
+      if (!error && data && data.id) {
+        setInternalUserId(data.id)
+      }
+    }
+    fetchInternalUserId()
+  }, [user])
 
   // Update view based on screen size
   useEffect(() => {
@@ -119,26 +140,24 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
 
   // Convert sessions to events format for react-big-calendar
   const events = sessions.flatMap((template): CalendarEvent[] => {
-    // For templates with instances, use those directly
     if (template.instances && template.instances.length > 0) {
       return template.instances.map(instance => {
-        // Parse the ISO string and create a new Date object
         const startTime = new Date(instance.start_time);
         const endTime = new Date(instance.end_time);
-        
-        // Format the time in local timezone
         const formattedStartTime = format(startTime, 'h:mm a');
         const formattedEndTime = format(endTime, 'h:mm a');
-        
-        // Check if this instance is booked by the current user
+        // Debug log for bookings and user IDs
+        if (instance.bookings && instance.bookings.length > 0) {
+          instance.bookings.forEach(b => {
+            console.log('Instance:', instance.id, 'BookingId:', b.id, 'User:', b.user, 'UserId:', b.user && ('id' in b.user ? b.user.id : undefined), 'ClerkUserId:', b.user?.clerk_user_id, 'InternalUserId:', internalUserId);
+          });
+        } else {
+          console.log('Instance:', instance.id, 'No bookings', 'InternalUserId:', internalUserId);
+        }
+        // Use internalUserId for booking check
         const userBooking = instance.bookings?.find(booking => {
-          // Get the clerk_user_id from the user object in the booking
-          const bookingClerkId = booking.user?.clerk_user_id;
-          // Compare with the current user's ID
-          return bookingClerkId === user?.id;
+          return booking.user && 'id' in booking.user && booking.user.id === internalUserId;
         });
-        
-        // Create events with the UTC times directly
         return {
           id: instance.id,
           title: `${formattedStartTime} – ${formattedEndTime}: ${template.name}`,
@@ -253,18 +272,23 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
   const timeRange = calculateTimeRange()
 
   const handleSelectEvent = (event: CalendarEvent) => {
-    // If the session is booked by the current user, add edit=true to the URL
-    const queryParams = new URLSearchParams({
-      start: event.start.toISOString()
-    });
-    
     if (event.isBooked && event.bookingId) {
-      queryParams.set('edit', 'true');
-      queryParams.set('bookingId', event.bookingId);
+      // Only allow editing
+      const queryParams = new URLSearchParams({
+        start: event.start.toISOString(),
+        edit: 'true',
+        bookingId: event.bookingId
+      });
+      router.push(`/booking/${event.resource.id}?${queryParams.toString()}`)
+      return
     }
-    
-    // Navigate to the booking form for this session
-    router.push(`/booking/${event.resource.id}?${queryParams.toString()}`)
+    if (!event.isBooked) {
+      // Only allow new booking if not already booked
+      const queryParams = new URLSearchParams({
+        start: event.start.toISOString()
+      });
+      router.push(`/booking/${event.resource.id}?${queryParams.toString()}`)
+    }
   }
 
   const navigatePeriod = (direction: 'prev' | 'next') => {

@@ -10,6 +10,7 @@ import { SessionTemplate } from "@/types/session"
 import { createClient } from '@supabase/supabase-js'
 import { useUser } from "@clerk/nextjs"
 import { getBookingDetails } from "@/app/actions/session"
+import { useRouter } from "next/navigation"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,6 +28,7 @@ interface SessionPageClientProps {
 
 export function SessionPageClient({ sessionId, searchParams }: SessionPageClientProps) {
   const { user } = useUser()
+  const router = useRouter()
   const [session, setSession] = useState<SessionTemplate | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +80,44 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
           fullUrl: window.location.href
         })
         
+        if (!edit && user && startParam) {
+          // Check if user already has a booking for this session instance
+          const { data: userData, error: userError } = await supabase
+            .from('clerk_users')
+            .select('id')
+            .eq('clerk_user_id', user.id)
+            .single()
+          if (!userError && userData && userData.id) {
+            // Find the session instance for this sessionId and start time
+            const { data: instance, error: instanceError } = await supabase
+              .from('session_instances')
+              .select('id')
+              .eq('template_id', sessionId)
+              .eq('start_time', decodeURIComponent(startParam))
+              .single()
+            if (!instanceError && instance && instance.id) {
+              // Check for a booking for this user and instance
+              const { data: booking, error: bookingError } = await supabase
+                .from('bookings')
+                .select('id')
+                .eq('user_id', userData.id)
+                .eq('session_instance_id', instance.id)
+                .eq('status', 'confirmed')
+                .maybeSingle()
+              if (!bookingError && booking && booking.id) {
+                // Redirect to edit mode
+                const params = new URLSearchParams({
+                  edit: 'true',
+                  bookingId: booking.id,
+                  start: decodeURIComponent(startParam)
+                })
+                router.replace(`/booking/${sessionId}?${params.toString()}`)
+                return
+              }
+            }
+          }
+        }
+
         if (edit === 'true' && bookingId && user) {
           console.log("Processing edit mode with:", {
             bookingId,
@@ -157,7 +197,7 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
     }
 
     fetchSession()
-  }, [sessionId, searchParams, user])
+  }, [sessionId, searchParams, user, router])
 
   if (loading) {
     return (

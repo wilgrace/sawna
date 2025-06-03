@@ -136,8 +136,9 @@ interface DBSessionInstance {
     id: string;
     number_of_spots: number;
     user: {
+      id: string;
       clerk_user_id: string;
-    }[];
+    };
   }[];
 }
 
@@ -610,7 +611,8 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
         bookings (
           id,
           number_of_spots,
-          user:clerk_users (
+          user:clerk_users!user_id (
+            id,
             clerk_user_id
           )
         )
@@ -626,7 +628,7 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
     // Transform the data
     const transformedData = (templates as DBSessionTemplate[]).map(template => {
       const templateSchedules = schedules?.filter(s => s.session_template_id === template.id) || []
-      const templateInstances = (instances as DBSessionInstance[])?.filter(i => i.template_id === template.id) || []
+      const templateInstances = (instances as unknown as DBSessionInstance[])?.filter(i => i.template_id === template.id) || []
 
       // Group schedules by time
       const scheduleGroups: Record<string, SessionSchedule> = templateSchedules.reduce((groups, schedule) => {
@@ -650,11 +652,12 @@ export async function getSessions(): Promise<{ data: SessionTemplate[] | null; e
       // Transform instances to include bookings
       const transformedInstances = templateInstances.map(instance => {
         const bookings = instance.bookings?.map(booking => {
-          const user = booking.user?.[0];
+          const user = booking.user;
           return {
             id: booking.id,
             number_of_spots: booking.number_of_spots || 1,
             user: {
+              id: user?.id || '',
               clerk_user_id: user?.clerk_user_id || ''
             }
           };
@@ -1412,7 +1415,8 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
         bookings (
           id,
           number_of_spots,
-          user:clerk_users (
+          user:clerk_users!user_id (
+            id,
             clerk_user_id
           )
         )
@@ -1429,7 +1433,7 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
     // Combine the data
     const transformedData = (templates as DBSessionTemplate[]).map(template => {
       const templateSchedules = schedules?.filter(s => s.session_template_id === template.id) || []
-      const templateInstances = (instances as DBSessionInstance[])?.filter(i => i.template_id === template.id) || []
+      const templateInstances = (instances as unknown as DBSessionInstance[])?.filter(i => i.template_id === template.id) || []
 
       // Group schedules by time
       const scheduleGroups: Record<string, SessionSchedule> = templateSchedules.reduce((groups, schedule) => {
@@ -1453,11 +1457,12 @@ export async function getPublicSessions(): Promise<{ data: SessionTemplate[] | n
       // Transform instances to include bookings
       const transformedInstances = templateInstances.map(instance => {
         const bookings = instance.bookings?.map(booking => {
-          const user = booking.user?.[0];
+          const user = booking.user;
           return {
             id: booking.id,
             number_of_spots: booking.number_of_spots || 1,
             user: {
+              id: user?.id || '',
               clerk_user_id: user?.clerk_user_id || ''
             }
           };

@@ -20,12 +20,6 @@ export function Sidebar() {
     { href: "/admin/users", icon: Users, label: "Users" },
   ]
 
-  const settingsItems = [
-    { href: "/settings/general", label: "General" },
-    { href: "/settings/pricing", label: "Pricing" },
-    { href: "/settings/design", label: "Design" },
-  ]
-
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="flex flex-col flex-1 py-4">
@@ -45,45 +39,6 @@ export function Sidebar() {
               {item.label}
             </Link>
           ))}
-
-          <div className="pt-2">
-            <button
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className={cn(
-                "w-full flex items-center px-3 py-2 text-sm font-medium rounded-md",
-                pathname.startsWith("/settings")
-                  ? "bg-gray-100 text-gray-900"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-              )}
-            >
-              <Settings className="mr-3 h-5 w-5" />
-              Settings
-              {isSettingsOpen ? (
-                <ChevronDown className="ml-auto h-4 w-4" />
-              ) : (
-                <ChevronRight className="ml-auto h-4 w-4" />
-              )}
-            </button>
-
-            {isSettingsOpen && (
-              <div className="ml-8 mt-1 space-y-1">
-                {settingsItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center px-3 py-2 text-sm font-medium rounded-md",
-                      pathname === item.href
-                        ? "bg-gray-100 text-gray-900"
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
         </nav>
       </div>
 

@@ -276,4 +276,64 @@ export async function ensureClerkUser(clerkUserId: string, email: string, firstN
       error: error instanceof Error ? error.message : "Unknown error occurred"
     }
   }
+}
+
+export async function listClerkUsers() {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    const { data, error } = await supabase
+      .from("clerk_users")
+      .select("id, email, first_name, last_name, organization_id, is_super_admin, date_of_birth, gender, ethnicity, home_postal_code, clerk_user_id, created_at, updated_at")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error listing clerk users:", error)
+      return { success: false, error: error.message, users: [] }
+    }
+
+    return { success: true, users: data }
+  } catch (error) {
+    console.error("Error in listClerkUsers:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred", users: [] }
+  }
+}
+
+export async function updateClerkUser(id: string, data: any) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false }
+    }
+  );
+  const { error } = await supabase
+    .from("clerk_users")
+    .update(data)
+    .eq("id", id);
+  return { error };
+}
+
+export async function deleteClerkUser(id: string) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false }
+    }
+  );
+  const { error } = await supabase
+    .from("clerk_users")
+    .delete()
+    .eq("id", id);
+  return { error };
 } 
