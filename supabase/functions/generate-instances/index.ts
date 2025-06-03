@@ -9,12 +9,23 @@ import { corsHeaders } from '../_shared/cors.ts';
 // Debug logging
 console.log("Function starting...");
 console.log("ENVIRONMENT:", Deno.env.get("ENVIRONMENT") || "development");
-console.log("DB_URL:", Deno.env.get("DB_URL") ? "Set" : "Not set");
+console.log("DB_URL:", Deno.env.get("SUPABASE_PROJECT_REF") ? "Set" : "Not set");
 console.log("SERVICE_ROLE_KEY:", Deno.env.get("SERVICE_ROLE_KEY") ? "Set" : "Not set");
 console.log("TIMEZONE:", Deno.env.get("TIMEZONE") ? "Set" : "Not set");
 
 const SAUNA_TIMEZONE = Deno.env.get("TIMEZONE") || 'Europe/London';
-const DB_URL = Deno.env.get("DB_URL") || "http://kong:8000";
+const DB_URL = Deno.env.get("SUPABASE_URL");
+if (!DB_URL) {
+  throw new Error("SUPABASE_URL environment variable is required");
+}
+
+console.log("Debug - Environment variables:", {
+  SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
+  SUPABASE_PROJECT_REF: Deno.env.get("SUPABASE_PROJECT_REF"),
+  ENVIRONMENT: Deno.env.get("ENVIRONMENT"),
+  DB_URL
+});
+
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY");
 
 if (!SERVICE_ROLE_KEY) {
@@ -101,10 +112,23 @@ function utcToLocal(date: Date, timezone: string): Date {
 }
 
 // Update CORS headers based on environment
-const getCorsHeaders = () => {
+const getCorsHeaders = (requestOrigin: string | null) => {
   const isDevelopment = Deno.env.get("ENVIRONMENT") === "development";
+  const allowedOrigins = Deno.env.get("ALLOWED_ORIGINS")?.split(",") || [];
+  
+  // Always allow localhost in development
+  if (isDevelopment) {
+    allowedOrigins.push("http://localhost:3000");
+  }
+
+  // If the request origin is in our allowed origins, use it
+  // Otherwise, use the first allowed origin as fallback
+  const origin = requestOrigin && allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : allowedOrigins[0];
+
   return {
-    "Access-Control-Allow-Origin": isDevelopment ? "http://localhost:3000" : "https://session-git-backup-before-rollback-wilgrace-gmailcoms-projects.vercel.app",
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   };
@@ -113,16 +137,18 @@ const getCorsHeaders = () => {
 // Create a custom serve function that bypasses auth
 const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
   return serve(async (req) => {
+    const requestOrigin = req.headers.get("origin");
+    
     // Handle CORS
     if (req.method === 'OPTIONS') {
-      return new Response('ok', { headers: getCorsHeaders() });
+      return new Response('ok', { headers: getCorsHeaders(requestOrigin) });
     }
 
     try {
       const response = await handler(req);
       // Ensure CORS headers are added to all responses
       const headers = new Headers(response.headers);
-      Object.entries(getCorsHeaders()).forEach(([key, value]) => {
+      Object.entries(getCorsHeaders(requestOrigin)).forEach(([key, value]) => {
         headers.set(key, value);
       });
       
@@ -137,7 +163,7 @@ const serveWithoutAuth = (handler: (req: Request) => Promise<Response>) => {
         JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error occurred" }),
         {
           status: 500,
-          headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
+          headers: { ...getCorsHeaders(requestOrigin), 'Content-Type': 'application/json' }
         }
       );
     }
@@ -167,7 +193,7 @@ serveWithoutAuth(async (req) => {
               status: 400,
               headers: { 
                 "Content-Type": "application/json",
-                ...getCorsHeaders()
+                ...getCorsHeaders(null)
               }
             }
           );
@@ -221,8 +247,8 @@ serveWithoutAuth(async (req) => {
     if (error) {
       console.error("[Error] Database query failed:", error);
       return new Response(
-        JSON.stringify({ error: "Failed to query templates" }),
-        { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders() } }
+        JSON.stringify({ error: "Failed to query templates", details: error }),
+        { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(null) } }
       );
     }
 
@@ -230,7 +256,7 @@ serveWithoutAuth(async (req) => {
       console.error("[Error] No templates found");
       return new Response(
         JSON.stringify({ error: "No templates found" }),
-        { status: 404, headers: { "Content-Type": "application/json", ...getCorsHeaders() } }
+        { status: 404, headers: { "Content-Type": "application/json", ...getCorsHeaders(null) } }
       );
     }
 
@@ -352,7 +378,7 @@ serveWithoutAuth(async (req) => {
     }), {
       headers: { 
         "Content-Type": "application/json",
-        ...getCorsHeaders()
+        ...getCorsHeaders(null)
       },
       status: 200
     });
@@ -364,7 +390,7 @@ serveWithoutAuth(async (req) => {
     }), {
       headers: { 
         "Content-Type": "application/json",
-        ...getCorsHeaders()
+        ...getCorsHeaders(null)
       },
       status: 500
     });
