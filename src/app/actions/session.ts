@@ -1643,7 +1643,6 @@ export async function getBookingDetails(bookingId: string) {
       .from("bookings")
       .select(`
         id,
-        notes,
         number_of_spots,
         session_instance:session_instances!inner (
           id,
@@ -1678,7 +1677,6 @@ export async function getBookingDetails(bookingId: string) {
     // Type assertion for the nested structure
     type BookingWithInstance = {
       id: string;
-      notes: string | null;
       number_of_spots: number;
       session_instance: {
         id: string;
@@ -1719,7 +1717,6 @@ export async function getBookingDetails(bookingId: string) {
     // Transform the data to match the expected types
     const transformedSession: SessionTemplate = {
       ...sessionTemplate,
-      is_recurring: sessionTemplate.is_recurring ?? false,
       schedules: [],
       instances: [{
         id: sessionInstance.id,
@@ -1735,7 +1732,6 @@ export async function getBookingDetails(bookingId: string) {
       data: {
         booking: {
           id: typedBookingData.id,
-          notes: typedBookingData.notes,
           number_of_spots: typedBookingData.number_of_spots
         },
         session: transformedSession,
@@ -1776,7 +1772,6 @@ export async function getUserUpcomingBookings(userId: string): Promise<{ data: B
       .select(`
         id,
         number_of_spots,
-        notes,
         session_instance:session_instances!inner (
           id,
           start_time,
@@ -1805,7 +1800,6 @@ export async function getUserUpcomingBookings(userId: string): Promise<{ data: B
     type BookingWithSession = {
       id: string;
       number_of_spots: number;
-      notes: string | null;
       session_instance: {
         id: string;
         start_time: string;
