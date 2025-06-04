@@ -169,14 +169,10 @@ async function getAuthenticatedUser() {
 
 // Helper function to create Supabase client
 function createSupabaseClient() {
-  console.log("Creating Supabase client with environment variables:", {
-    hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-    hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL
-  });
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const keyType = supabaseServiceKey && supabaseServiceKey.startsWith('eyJhbGciOiJIUzI1Ni') ? 'service_role' : 'unknown';
+  console.log(`[Supabase] Creating client with key type: ${keyType}`);
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error("Missing Supabase environment variables:", {
@@ -186,8 +182,6 @@ function createSupabaseClient() {
     throw new Error("Missing required Supabase environment variables");
   }
 
-  console.log("Initializing Supabase client with URL:", supabaseUrl);
-  
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       autoRefreshToken: false,
