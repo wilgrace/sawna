@@ -158,6 +158,33 @@ interface DBSessionTemplate {
   organization_id: string;
 }
 
+// Global fetch wrapper for logging and Accept header enforcement (server-side only)
+if (typeof window === 'undefined') {
+  const originalFetch = global.fetch;
+  global.fetch = async (input, init = {}) => {
+    let url = '';
+    if (typeof input === 'string') url = input;
+    else if (input instanceof Request) url = input.url;
+    else if (input instanceof URL) url = input.toString();
+
+    // Normalize headers to a plain object for mutation
+    let headersObj: Record<string, string> = {};
+    if (init.headers instanceof Headers) {
+      headersObj = Object.fromEntries(init.headers.entries());
+    } else if (Array.isArray(init.headers)) {
+      headersObj = Object.fromEntries(init.headers);
+    } else if (typeof init.headers === 'object' && init.headers !== null) {
+      headersObj = { ...init.headers };
+    }
+    if (!('Accept' in headersObj)) {
+      headersObj['Accept'] = 'application/json';
+    }
+    init.headers = headersObj;
+    console.log(`[GlobalFetch] ${init.method || 'GET'} ${url} | Headers:`, headersObj);
+    return originalFetch(input, init);
+  };
+}
+
 // Helper function to get authenticated user
 async function getAuthenticatedUser() {
   const { userId } = await auth()
