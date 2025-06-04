@@ -1696,6 +1696,22 @@ export async function getBookingDetails(bookingId: string) {
       session_instance_id: bookingData.session_instance_id
     });
 
+    // Check for missing session_instance or template
+    if (!bookingData.session_instance) {
+      console.error("No session_instance found for booking:", bookingData);
+      return {
+        success: false,
+        error: "No session instance found for this booking. It may have been deleted or is missing."
+      };
+    }
+    if (!bookingData.session_instance.template) {
+      console.error("No session template found for booking's session_instance:", bookingData.session_instance);
+      return {
+        success: false,
+        error: "No session template found for this booking's session instance. It may have been deleted or is missing."
+      };
+    }
+
     // Then get the user data using clerk_user_id
     const { data: userData, error: userError } = await supabase
       .from("clerk_users")
