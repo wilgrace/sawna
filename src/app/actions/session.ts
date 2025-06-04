@@ -8,8 +8,6 @@ import { ensureClerkUser } from "./clerk"
 import { Booking } from "@/types/booking"
 
 // These should come from your environment variables
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -314,7 +312,7 @@ export async function createSessionTemplate(params: CreateSessionTemplateParams)
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY
+            'Authorization': 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
           },
           body: JSON.stringify({ template_id_to_process: data.id }),
         });
