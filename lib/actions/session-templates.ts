@@ -1,7 +1,5 @@
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
 import { sessionTemplates, sessionSchedules, NewSessionTemplate, NewSessionSchedule } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { createClient } from '@supabase/supabase-js';
 
 // These should come from your environment variables
@@ -27,8 +25,10 @@ export async function saveSessionTemplate(
   let isNewTemplate = false;
 
   try {
-    // Fetch the user's organization_id
+    // Create Supabase client
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Fetch the user's organization_id
     const { data: userData, error: userError } = await supabase
       .from('clerk_users')
       .select('organization_id')
@@ -41,48 +41,66 @@ export async function saveSessionTemplate(
 
     if (templateIdToUpdate) {
       // Update existing template
-      const updated = await db
-        .update(sessionTemplates)
-        .set({
+      const { data: updated, error: updateError } = await supabase
+        .from('session_templates')
+        .update({
           ...templateData,
           userId,
           organizationId: orgId,
           updatedAt: new Date(),
         })
-        .where(eq(sessionTemplates.id, templateIdToUpdate))
-        .returning({ id: sessionTemplates.id });
+        .eq('id', templateIdToUpdate)
+        .select('id')
+        .single();
 
-      if (!updated || updated.length === 0) {
+      if (updateError || !updated) {
         return { success: false, error: 'Failed to update template or template not found.' };
       }
-      savedTemplateId = updated[0].id;
+      savedTemplateId = updated.id;
     } else {
       // Create new template
-      const newTemplate = await db
-        .insert(sessionTemplates)
-        .values({
+      const { data: newTemplate, error: createError } = await supabase
+        .from('session_templates')
+        .insert({
           ...templateData,
           userId,
           organizationId: orgId,
         })
-        .returning({ id: sessionTemplates.id });
+        .select('id')
+        .single();
 
-      if (!newTemplate || newTemplate.length === 0) {
+      if (createError || !newTemplate) {
         return { success: false, error: 'Failed to create template.' };
       }
-      savedTemplateId = newTemplate[0].id;
+      savedTemplateId = newTemplate.id;
       isNewTemplate = true;
     }
 
     // --- Manage Schedules ---
-    await db.delete(sessionSchedules).where(eq(sessionSchedules.sessionTemplateId, savedTemplateId));
+    // Delete existing schedules
+    const { error: deleteError } = await supabase
+      .from('session_schedules')
+      .delete()
+      .eq('sessionTemplateId', savedTemplateId);
 
+    if (deleteError) {
+      console.error('Error deleting existing schedules:', deleteError);
+    }
+
+    // Insert new schedules
     if (schedulesData && schedulesData.length > 0) {
       const schedulesToInsert = schedulesData.map((schedule) => ({
         ...schedule,
         sessionTemplateId: savedTemplateId,
       }));
-      await db.insert(sessionSchedules).values(schedulesToInsert);
+      
+      const { error: insertError } = await supabase
+        .from('session_schedules')
+        .insert(schedulesToInsert);
+
+      if (insertError) {
+        console.error('Error inserting new schedules:', insertError);
+      }
     }
 
     // --- Trigger Instance Generation ---
@@ -117,8 +135,7 @@ export async function saveSessionTemplate(
       }
     } else {
       // Call remote Edge Function using Supabase client
-      const supabaseClientForFunctions = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      const { data: functionData, error: functionError } = await supabaseClientForFunctions.functions.invoke(
+      const { data: functionData, error: functionError } = await supabase.functions.invoke(
         'generate-instances',
         {
           body: { template_id_to_process: savedTemplateId },
