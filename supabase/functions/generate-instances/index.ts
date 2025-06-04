@@ -231,6 +231,7 @@ serveWithoutAuth(async (req) => {
         recurrence_start_date,
         recurrence_end_date,
         duration_minutes,
+        organization_id,
         session_schedules (
           id,
           time,

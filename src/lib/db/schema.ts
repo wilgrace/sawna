@@ -15,6 +15,7 @@ export const sessionTemplates = pgTable('session_templates', {
   userId: text('user_id').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  organizationId: uuid('organization_id'),
 });
 
 export const sessionSchedules = pgTable('session_schedules', {

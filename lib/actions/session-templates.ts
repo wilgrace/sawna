@@ -27,6 +27,18 @@ export async function saveSessionTemplate(
   let isNewTemplate = false;
 
   try {
+    // Fetch the user's organization_id
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: userData, error: userError } = await supabase
+      .from('clerk_users')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+    if (userError || !userData?.organization_id) {
+      return { success: false, error: 'Could not find user organization.' };
+    }
+    const orgId = userData.organization_id;
+
     if (templateIdToUpdate) {
       // Update existing template
       const updated = await db
@@ -34,6 +46,7 @@ export async function saveSessionTemplate(
         .set({
           ...templateData,
           userId,
+          organizationId: orgId,
           updatedAt: new Date(),
         })
         .where(eq(sessionTemplates.id, templateIdToUpdate))
@@ -50,6 +63,7 @@ export async function saveSessionTemplate(
         .values({
           ...templateData,
           userId,
+          organizationId: orgId,
         })
         .returning({ id: sessionTemplates.id });
 
