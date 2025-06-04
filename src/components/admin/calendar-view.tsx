@@ -55,8 +55,14 @@ interface CalendarViewProps {
 // Add this before the CalendarView component
 const CustomEvent = ({ event }: EventProps<CalendarEvent>) => {
   const totalCapacity = event.resource.capacity || 10
-  const currentBookings = event.resource.instances?.find(i => i.start_time === event.start.toISOString())?.bookings?.length || 0
-  const availableSpots = totalCapacity - currentBookings
+  // Find the instance for this event
+  const instance = event.resource.instances?.find(i => {
+    const instanceStart = new Date(i.start_time)
+    return instanceStart.getTime() === event.start.getTime()
+  })
+  // Sum number_of_spots across all bookings for this instance
+  const totalSpotsBooked = instance?.bookings?.reduce((sum, booking) => sum + (booking.number_of_spots || 1), 0) || 0
+  const availableSpots = totalCapacity - totalSpotsBooked
 
   const getAvailabilityColor = (available: number, total: number) => {
     if (available === 0) return "bg-gray-500"
@@ -78,7 +84,7 @@ const CustomEvent = ({ event }: EventProps<CalendarEvent>) => {
         variant="secondary" 
         className={`${getAvailabilityColor(availableSpots, totalCapacity)} text-white px-2 py-0.5 rounded-full text-xs`}
       >
-        {availableSpots === 0 ? 'Sold out' : `${currentBookings}/${totalCapacity}`}
+        {availableSpots === 0 ? 'Sold out' : `${totalSpotsBooked}/${totalCapacity}`}
       </Badge>
     </div>
   )

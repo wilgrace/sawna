@@ -24,10 +24,10 @@ DROP COLUMN "time";
 ALTER TABLE "public"."session_templates"
 ALTER COLUMN "one_off_start_time" TYPE timestamptz
 USING (
-  CASE 
-    WHEN one_off_start_time IS NOT NULL AND one_off_date IS NOT NULL 
-    THEN (one_off_date + one_off_start_time) AT TIME ZONE 'Europe/London' AT TIME ZONE 'UTC'
-    ELSE NULL
+  CASE
+    WHEN one_off_start_time IS NOT NULL AND one_off_date IS NOT NULL
+    THEN (one_off_date + one_off_start_time::time) AT TIME ZONE 'Europe/London' AT TIME ZONE 'UTC'
+    ELSE one_off_start_time
   END
 );
 

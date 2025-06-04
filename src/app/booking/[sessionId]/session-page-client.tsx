@@ -128,10 +128,10 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
 
           try {
             const result = await getBookingDetails(bookingId)
-            if (!result.success || !result.data) {
-              throw new Error(result.error || "Failed to fetch booking details")
+            if (!result.success) {
+              throw new Error("Failed to fetch booking details")
             }
-            const { booking, session, startTime: bookingStartTime } = result.data
+            const { booking, session, startTime: bookingStartTime } = (result as { success: true; data: any }).data
             console.log("Successfully fetched booking:", { booking, session })
             
             // Verify that the booking belongs to the current user

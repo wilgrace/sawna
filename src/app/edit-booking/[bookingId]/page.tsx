@@ -17,11 +17,10 @@ export default function EditBookingPage({ params }: EditBookingPageProps) {
     async function redirectToBookingPage() {
       try {
         const result = await getBookingDetails(bookingId)
-        if (!result.success || !result.data) {
-          throw new Error(result.error || "Failed to load booking")
+        if (!result.success) {
+          throw new Error("Failed to load booking")
         }
-
-        const { session, startTime } = result.data
+        const { session, startTime } = (result as { success: true; data: any }).data
         const queryParams = new URLSearchParams({
           edit: 'true',
           bookingId: bookingId,

@@ -173,7 +173,9 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
 
     setLoading(true)
     try {
+      console.log("Attempting to cancel booking:", bookingId);
       const result = await deleteBooking(bookingId)
+      console.log("Delete booking result:", result);
 
       if (!result.success) {
         throw new Error(result.error || "Failed to cancel booking")
@@ -183,7 +185,9 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
         title: "Success",
         description: "Booking cancelled successfully",
       })
-      router.push("/booking")
+      
+      // Force a hard navigation to ensure the page is fully reloaded
+      window.location.href = "/booking"
     } catch (error: any) {
       console.error("Error cancelling booking:", error)
       toast({

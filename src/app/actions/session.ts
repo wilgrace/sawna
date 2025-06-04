@@ -1560,20 +1560,44 @@ export async function deleteBooking(booking_id: string) {
     console.log("\n=== deleteBooking Debug ===");
     console.log("Input parameters:", { booking_id });
 
-    const supabase = createSupabaseClient();
+    // Create a new Supabase client with service role key
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase environment variables:", {
+        hasUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey
+      });
+      return { success: false, error: "Missing required Supabase environment variables" };
+    }
+
+    console.log("Creating Supabase client with service role...");
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
 
     // First verify the booking exists
     console.log("\nStep 1: Verifying booking exists...");
     const { data: existingBooking, error: checkError } = await supabase
       .from('bookings')
-      .select('id')
+      .select('id, user_id, session_instance_id')
       .eq('id', booking_id)
-      .maybeSingle();
+      .single();
 
     console.log("Booking check result:", { existingBooking, checkError });
 
     if (checkError) {
-      console.error("Error checking booking:", checkError);
+      console.error("Error checking booking:", {
+        error: checkError,
+        message: checkError.message,
+        details: checkError.details,
+        hint: checkError.hint,
+        code: checkError.code
+      });
       return { success: false, error: `Failed to verify booking: ${checkError.message}` };
     }
 
@@ -1589,31 +1613,25 @@ export async function deleteBooking(booking_id: string) {
       .delete()
       .eq('id', booking_id);
 
-    console.log("Delete result:", { error: deleteError });
+    console.log("Delete result:", { 
+      error: deleteError,
+      errorDetails: deleteError ? {
+        message: deleteError.message,
+        details: deleteError.details,
+        hint: deleteError.hint,
+        code: deleteError.code
+      } : null
+    });
 
     if (deleteError) {
-      console.error('Error deleting booking:', deleteError);
+      console.error('Error deleting booking:', {
+        error: deleteError,
+        message: deleteError.message,
+        details: deleteError.details,
+        hint: deleteError.hint,
+        code: deleteError.code
+      });
       return { success: false, error: `Failed to delete booking: ${deleteError.message}` };
-    }
-
-    // Verify the booking was actually deleted
-    console.log("\nStep 3: Verifying deletion...");
-    const { data: verifyBooking, error: verifyError } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('id', booking_id)
-      .maybeSingle();
-
-    console.log("Verification result:", { verifyBooking, verifyError });
-
-    if (verifyError) {
-      console.error("Error verifying deletion:", verifyError);
-      return { success: false, error: `Failed to verify deletion: ${verifyError.message}` };
-    }
-
-    if (verifyBooking) {
-      console.error("Booking still exists after deletion");
-      return { success: false, error: "Failed to delete booking: Booking still exists" };
     }
 
     console.log("\n=== deleteBooking Success ===");
@@ -1625,7 +1643,8 @@ export async function deleteBooking(booking_id: string) {
       message: error.message,
       code: error.code,
       details: error.details,
-      hint: error.hint
+      hint: error.hint,
+      stack: error.stack
     });
     return { success: false, error: error.message };
   }
@@ -1633,6 +1652,9 @@ export async function deleteBooking(booking_id: string) {
 
 export async function getBookingDetails(bookingId: string) {
   try {
+    console.log("\n=== getBookingDetails Debug ===");
+    console.log("Input bookingId:", bookingId);
+
     // First get the booking with its session instance and template
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
@@ -1647,60 +1669,105 @@ export async function getBookingDetails(bookingId: string) {
       .single();
 
     if (bookingError) {
-      console.error("Error fetching booking:", bookingError);
-      throw new Error("Failed to fetch booking details");
+      console.error("Error fetching booking:", {
+        error: bookingError,
+        message: bookingError.message,
+        details: bookingError.details,
+        hint: bookingError.hint,
+        code: bookingError.code
+      });
+      return {
+        success: false,
+        error: "Failed to fetch booking details"
+      };
     }
 
     if (!bookingData) {
-      throw new Error("No bookings found");
+      console.error("No booking data found for ID:", bookingId);
+      return {
+        success: false,
+        error: "No bookings found"
+      };
     }
+
+    console.log("Booking data found:", {
+      id: bookingData.id,
+      user_id: bookingData.user_id,
+      session_instance_id: bookingData.session_instance_id
+    });
 
     // Then get the user data using clerk_user_id
     const { data: userData, error: userError } = await supabase
       .from("clerk_users")
       .select("*")
-      .eq("clerk_user_id", bookingData.user_id)
+      .eq("id", bookingData.user_id)
       .single();
 
     if (userError) {
-      console.error("Error fetching user:", userError);
-      throw new Error("Failed to fetch user details");
+      console.error("Error fetching user:", {
+        error: userError,
+        message: userError.message,
+        details: userError.details,
+        hint: userError.hint,
+        code: userError.code,
+        user_id: bookingData.user_id
+      });
+      return {
+        success: false,
+        error: "Failed to fetch user details"
+      };
     }
 
     if (!userData) {
-      throw new Error("User not found");
+      console.error("No user data found for ID:", bookingData.user_id);
+      return {
+        success: false,
+        error: "User not found"
+      };
     }
+
+    console.log("User data found:", {
+      id: userData.id,
+      clerk_user_id: userData.clerk_user_id
+    });
 
     // Transform the response to match the expected format
     const response = {
-      id: bookingData.id,
-      session_instance: {
-        id: bookingData.session_instance.id,
-        template: bookingData.session_instance.template,
-        start_time: bookingData.session_instance.start_time,
-        end_time: bookingData.session_instance.end_time,
-        status: bookingData.session_instance.status,
-        created_at: bookingData.session_instance.created_at,
-        updated_at: bookingData.session_instance.updated_at,
-      },
-      user: {
-        id: userData.id,
-        email: userData.email,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        phone: userData.phone,
-        created_at: userData.created_at,
-        updated_at: userData.updated_at,
-      },
-      status: bookingData.status,
-      created_at: bookingData.created_at,
-      updated_at: bookingData.updated_at,
+      success: true,
+      data: {
+        booking: {
+          id: bookingData.id,
+          notes: bookingData.notes,
+          number_of_spots: bookingData.number_of_spots,
+          status: bookingData.status,
+          created_at: bookingData.created_at,
+          updated_at: bookingData.updated_at,
+          user: {
+            id: userData.id,
+            email: userData.email,
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            phone: userData.phone,
+            clerk_user_id: userData.clerk_user_id
+          }
+        },
+        session: bookingData.session_instance.template,
+        startTime: new Date(bookingData.session_instance.start_time)
+      }
     };
 
+    console.log("Successfully constructed response");
     return response;
   } catch (error) {
-    console.error("Error in getBookingDetails:", error);
-    throw error;
+    console.error("Error in getBookingDetails:", {
+      error,
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    };
   }
 }
 

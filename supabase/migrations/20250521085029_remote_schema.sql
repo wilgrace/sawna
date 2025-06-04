@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS "public"."session_templates" (
     "is_open" boolean DEFAULT true NOT NULL,
     "is_recurring" boolean DEFAULT false NOT NULL,
     "one_off_start_time" timestamp with time zone,
+    "one_off_date" date,
     "recurrence_start_date" date,
     "recurrence_end_date" date,
     "created_by" uuid NOT NULL,
