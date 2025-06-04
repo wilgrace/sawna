@@ -71,6 +71,13 @@ export async function getClerkUser(clerkUserId: string): Promise<GetClerkUserRes
 
 export async function createClerkUser(params: CreateClerkUserParams): Promise<CreateClerkUserResult> {
   try {
+    if (!params.clerk_user_id) {
+      return {
+        success: false,
+        error: "clerk_user_id is required to create a user."
+      };
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -105,24 +112,10 @@ export async function createClerkUser(params: CreateClerkUserParams): Promise<Cr
       }
     }
 
-    // Get the default organization ID
-    const { data: defaultOrg, error: orgError } = await supabase
-      .from("organizations")
-      .select("id")
-      .eq("name", "Default Organization")
-      .single()
-
-    if (orgError || !defaultOrg?.id) {
-      console.error("Error getting default organization:", orgError)
-      return {
-        success: false,
-        error: "Failed to get default organization"
-      }
-    }
-
-    const orgId = params.organization_id || defaultOrg.id;
+    // Get the organization ID to use
+    const orgId = params.organization_id || '11111111-1111-1111-1111-111111111111';
     if (!orgId) {
-      console.error("No valid organization_id found for clerk user creation.", { params, defaultOrg })
+      console.error("No valid organization_id found for clerk user creation.", { params })
       return {
         success: false,
         error: "No valid organization_id found for clerk user creation."
@@ -226,22 +219,8 @@ export async function ensureClerkUser(clerkUserId: string, email: string, firstN
     console.log("Creating new clerk user...")
 
     // If user doesn't exist, create them
-    // Get the default organization ID
-    const { data: defaultOrg, error: orgError } = await supabase
-      .from("organizations")
-      .select("id")
-      .eq("name", "Default Organization")
-      .single();
-
-    if (orgError || !defaultOrg?.id) {
-      console.error("Error getting default organization:", orgError);
-      return {
-        success: false,
-        error: "Failed to get default organization"
-      };
-    }
-
-    const orgId = defaultOrg.id;
+    // Use the hardcoded organization ID
+    const orgId = '11111111-1111-1111-1111-111111111111';
 
     const { data: newUser, error: createError } = await supabase
       .from("clerk_users")

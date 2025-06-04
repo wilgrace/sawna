@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Profile } from "@/types/profile";
 import { createClient } from "@supabase/supabase-js";
-import { updateClerkUser, deleteClerkUser } from "@/app/actions/clerk";
+import { updateClerkUser, deleteClerkUser, createClerkUser } from "@/app/actions/clerk";
 
 interface UserFormProps {
   open: boolean;
@@ -48,6 +48,10 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user && !form.clerk_user_id) {
+      alert("Clerk User ID is required to create a new user.");
+      return;
+    }
     setLoading(true);
     let result;
     if (user && user.id) {
@@ -62,39 +66,31 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
         gender: form.gender || null,
         ethnicity: form.ethnicity || null,
         home_postal_code: form.home_postal_code || null,
+        clerk_user_id: form.clerk_user_id || undefined,
       });
       result = { error };
     } else {
-      // Create (client-side, as before)
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-          auth: { autoRefreshToken: false, persistSession: false },
-        }
-      );
-      const { error } = await supabase
-        .from("clerk_users")
-        .insert({
-          email: form.email,
-          first_name: form.first_name,
-          last_name: form.last_name,
-          organization_id: form.organization_id,
-          is_super_admin: form.is_super_admin,
-          date_of_birth: form.date_of_birth || null,
-          gender: form.gender || null,
-          ethnicity: form.ethnicity || null,
-          home_postal_code: form.home_postal_code || null,
-          clerk_user_id: form.clerk_user_id || undefined,
-        });
-      result = { error };
+      // Create via server action
+      const { success, error } = await createClerkUser({
+        email: form.email!,
+        first_name: form.first_name || undefined,
+        last_name: form.last_name || undefined,
+        organization_id: form.organization_id || undefined,
+        is_super_admin: form.is_super_admin,
+        date_of_birth: form.date_of_birth || undefined,
+        gender: form.gender || undefined,
+        ethnicity: form.ethnicity || undefined,
+        home_postal_code: form.home_postal_code || undefined,
+        clerk_user_id: form.clerk_user_id || undefined,
+      } as any);
+      result = { error: error || (success ? undefined : 'Unknown error') };
     }
     setLoading(false);
     if (!result.error) {
       onSuccess();
       onClose();
     } else {
-      alert("Error saving user: " + result.error.message);
+      alert("Error saving user: " + result.error);
     }
   };
 
@@ -206,6 +202,7 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
               value={form.clerk_user_id || ""}
               onChange={(e) => handleChange("clerk_user_id", e.target.value)}
               disabled={!!user}
+              required={!user}
             />
           </div>
           <div className="sticky bottom-0 bg-white border-t px-6 py-4 -mx-6 -mb-4">
