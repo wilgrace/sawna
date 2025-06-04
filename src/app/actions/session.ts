@@ -7,12 +7,64 @@ import { mapDayStringToInt, mapIntToDayString } from "@/lib/day-utils"
 import { ensureClerkUser } from "./clerk"
 import { Booking } from "@/types/booking"
 
-// These should come from your environment variables
+// Global fetch wrapper for logging and Accept header enforcement (server-side only)
+if (typeof window === 'undefined') {
+  const originalFetch = global.fetch;
+  global.fetch = async (input, init = {}) => {
+    let url = '';
+    if (typeof input === 'string') url = input;
+    else if (input instanceof Request) url = input.url;
+    else if (input instanceof URL) url = input.toString();
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+    // Normalize headers to a plain object for mutation
+    let headersObj: Record<string, string> = {};
+    if (init.headers instanceof Headers) {
+      headersObj = Object.fromEntries(init.headers.entries());
+    } else if (Array.isArray(init.headers)) {
+      headersObj = Object.fromEntries(init.headers);
+    } else if (typeof init.headers === 'object' && init.headers !== null) {
+      headersObj = { ...init.headers };
+    }
+    if (!('Accept' in headersObj)) {
+      headersObj['Accept'] = 'application/json';
+    }
+    init.headers = headersObj;
+    console.log(`[GlobalFetch] ${init.method || 'GET'} ${url} | Headers:`, headersObj);
+    return originalFetch(input, init);
+  };
+}
+
+// Helper function to get authenticated user
+async function getAuthenticatedUser() {
+  const { userId } = await auth()
+  if (!userId) {
+    throw new Error("Unauthorized")
+  }
+  return userId
+}
+
+// Helper function to create Supabase client
+function createSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const keyType = supabaseServiceKey && supabaseServiceKey.startsWith('eyJhbGciOiJIUzI1Ni') ? 'service_role' : 'unknown';
+  console.log(`[Supabase] Creating client with key type: ${keyType}`);
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error("Missing Supabase environment variables:", {
+      hasUrl: !!supabaseUrl,
+      hasServiceKey: !!supabaseServiceKey
+    });
+    throw new Error("Missing required Supabase environment variables");
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+}
 
 interface CreateSessionTemplateParams {
   name: string
@@ -156,65 +208,6 @@ interface DBSessionTemplate {
   updated_at: string;
   created_by: string;
   organization_id: string;
-}
-
-// Global fetch wrapper for logging and Accept header enforcement (server-side only)
-if (typeof window === 'undefined') {
-  const originalFetch = global.fetch;
-  global.fetch = async (input, init = {}) => {
-    let url = '';
-    if (typeof input === 'string') url = input;
-    else if (input instanceof Request) url = input.url;
-    else if (input instanceof URL) url = input.toString();
-
-    // Normalize headers to a plain object for mutation
-    let headersObj: Record<string, string> = {};
-    if (init.headers instanceof Headers) {
-      headersObj = Object.fromEntries(init.headers.entries());
-    } else if (Array.isArray(init.headers)) {
-      headersObj = Object.fromEntries(init.headers);
-    } else if (typeof init.headers === 'object' && init.headers !== null) {
-      headersObj = { ...init.headers };
-    }
-    if (!('Accept' in headersObj)) {
-      headersObj['Accept'] = 'application/json';
-    }
-    init.headers = headersObj;
-    console.log(`[GlobalFetch] ${init.method || 'GET'} ${url} | Headers:`, headersObj);
-    return originalFetch(input, init);
-  };
-}
-
-// Helper function to get authenticated user
-async function getAuthenticatedUser() {
-  const { userId } = await auth()
-  if (!userId) {
-    throw new Error("Unauthorized")
-  }
-  return userId
-}
-
-// Helper function to create Supabase client
-function createSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const keyType = supabaseServiceKey && supabaseServiceKey.startsWith('eyJhbGciOiJIUzI1Ni') ? 'service_role' : 'unknown';
-  console.log(`[Supabase] Creating client with key type: ${keyType}`);
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    console.error("Missing Supabase environment variables:", {
-      hasUrl: !!supabaseUrl,
-      hasServiceKey: !!supabaseServiceKey
-    });
-    throw new Error("Missing required Supabase environment variables");
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
 }
 
 export async function createSessionTemplate(params: CreateSessionTemplateParams): Promise<CreateSessionTemplateResult> {
@@ -1671,6 +1664,7 @@ export async function deleteBooking(booking_id: string) {
 
 export async function getBookingDetails(bookingId: string) {
   try {
+    const supabase = createSupabaseClient();
     console.log("\n=== getBookingDetails Debug ===");
     console.log("Input bookingId:", bookingId);
 
@@ -1913,5 +1907,14 @@ export async function getUserUpcomingBookings(userId: string): Promise<{ data: B
   } catch (error) {
     console.error('Error in getUserUpcomingBookings:', error)
     return { data: null, error: error instanceof Error ? error.message : 'An error occurred' }
+  }
+}
+
+export async function getUserBookings(userId: string) {
+  try {
+    const supabase = createSupabaseClient();
+    // ... existing code ...
+  } catch (error) {
+    // ... existing code ...
   }
 } 
