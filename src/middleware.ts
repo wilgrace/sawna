@@ -5,7 +5,8 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/',
-  '/booking(.*)'
+  '/booking(.*)',
+  '/api/webhooks(.*)'  // Add webhook endpoints as public routes
 ]);
 
 const isAdminRoute = createRouteMatcher([
@@ -31,4 +32,4 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/", "/(api|trpc)(.*)"],
-};
+}; 

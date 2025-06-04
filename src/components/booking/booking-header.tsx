@@ -1,12 +1,11 @@
-import { UserButton } from "@clerk/nextjs"
+import { UserButton, SignedIn, SignedOut } from "@clerk/nextjs"
 import Link from "next/link"
 
 interface BookingHeaderProps {
-  isAuthenticated: boolean
   isAdmin: boolean
 }
 
-export function BookingHeader({ isAuthenticated, isAdmin }: BookingHeaderProps) {
+export function BookingHeader({ isAdmin }: BookingHeaderProps) {
   return (
     <header className="border-b">
       <div className="flex h-16 items-center px-4">
@@ -16,24 +15,25 @@ export function BookingHeader({ isAuthenticated, isAdmin }: BookingHeaderProps) 
           </Link>
         </div>
         <div className="flex items-center gap-4">
-          {isAuthenticated ? (
-            <>
+          <SignedIn>
+            {isAdmin && (
               <Link
                 href="/admin/calendar"
                 className="text-sm font-medium text-muted-foreground hover:text-primary"
               >
                 Admin
               </Link>
-              <UserButton afterSignOutUrl="/booking" />
-            </>
-          ) : (
+            )}
+            <UserButton afterSignOutUrl="/booking" />
+          </SignedIn>
+          <SignedOut>
             <Link
               href="/sign-in"
               className="rounded-md bg-primary px-4 py-2 text-primary-foreground"
             >
               Sign In
             </Link>
-          )}
+          </SignedOut>
         </div>
       </div>
     </header>

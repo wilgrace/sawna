@@ -28,6 +28,16 @@ export const sessionSchedules = pgTable('session_schedules', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const clerkUsers = pgTable('clerk_users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  clerkUserId: text('clerk_user_id').notNull().unique(),
+  email: text('email').notNull(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // Types for new records
 export type NewSessionTemplate = typeof sessionTemplates.$inferInsert;
 export type NewSessionSchedule = typeof sessionSchedules.$inferInsert; 

@@ -1,12 +1,12 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
 import * as schema from './schema';
 
 // These should come from your environment variables
-const connectionString = process.env.DATABASE_URL!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Create the connection
-const client = postgres(connectionString);
+// Create the Supabase client
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Create the database instance
-export const db = drizzle(client, { schema }); 
+// Export the schema for type safety
+export { schema }; 
