@@ -83,6 +83,7 @@ export async function saveSessionTemplate(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
           },
           body: JSON.stringify({ template_id_to_process: savedTemplateId }),
         });

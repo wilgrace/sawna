@@ -35,6 +35,7 @@ async function generateInstances() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
     })
     
@@ -411,7 +412,8 @@ export function SessionForm({ open, onClose, template, initialTimeSlot, onSucces
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Accept': 'application/json',
           },
           body: JSON.stringify({
             template_id_to_process: templateId
