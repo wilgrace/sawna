@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { Webhook } from 'https://esm.sh/svix@1.21.0'; // Clerk uses svix for webhooks
+import { Webhook } from 'npm:svix@1.15.0';
 import { corsHeaders } from '../_shared/cors.ts'; // Optional: manage CORS if needed
 
 // Define expected Clerk event payload structure (adjust based on actual usage)
@@ -55,19 +55,28 @@ Deno.serve(async (req) => {
   // For test events, we don't need to check for secrets
   if (!isTestEvent) {
     const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get('DB_URL');
+    const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_KEY');
     const defaultOrgId = Deno.env.get('DEFAULT_ORGANIZATION_ID');
 
-    if (!webhookSecret || !supabaseUrl || !supabaseServiceKey) {
-      console.error('Missing environment variables');
+    if (!webhookSecret || !supabaseUrl || !supabaseServiceKey || !defaultOrgId) {
+      console.error('Missing environment variables:', {
+        hasWebhookSecret: !!webhookSecret,
+        hasSupabaseUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey,
+        hasDefaultOrgId: !!defaultOrgId,
+        envKeys: Object.keys(Deno.env.toObject())
+      });
       return new Response('Internal Server Error: Missing configuration', { status: 500 });
     }
   }
 
   // --- 2. Initialize Supabase Admin Client ---
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const supabaseUrl = Deno.env.get('DB_URL');
+  const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_KEY');
+  
+  console.log('Initializing Supabase client with URL:', supabaseUrl);
+  
   const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!, {
     auth: {
       autoRefreshToken: false,
@@ -131,27 +140,28 @@ Deno.serve(async (req) => {
         }
         // --- End Reading Default Org ID ---
     
-    
         if (!primaryEmail) {
            console.error('User created event missing primary email for Clerk ID:', userData.id);
            return new Response('Webhook Error: User created without primary email', { status: 400 });
         }
+
+        console.log('Processing user creation for email:', primaryEmail);
     
-        // Check if user with this email already exists (guest upgrade logic)
-        const { data: existingUserByEmail, error: checkEmailError } = await supabaseAdmin
+        // First check if user exists in clerk_users table
+        const { data: existingClerkUser, error: checkClerkError } = await supabaseAdmin
           .from('clerk_users')
           .select('*')
           .eq('email', primaryEmail)
           .maybeSingle();
     
-        if (checkEmailError && checkEmailError.code !== 'PGRST116') {
-           console.error('Error checking for existing user by email:', checkEmailError);
-           throw checkEmailError;
+        if (checkClerkError && checkClerkError.code !== 'PGRST116') {
+           console.error('Error checking for existing clerk user:', checkClerkError);
+           throw checkClerkError;
         }
     
-        if (existingUserByEmail) {
+        if (existingClerkUser) {
           // Upgrade guest to full user
-          console.log('Existing user found by email, upgrading:', existingUserByEmail.id);
+          console.log('Existing clerk user found, upgrading:', existingClerkUser.id);
           const { error: updateError } = await supabaseAdmin
             .from('clerk_users')
             .update({
@@ -161,34 +171,25 @@ Deno.serve(async (req) => {
               organization_id: defaultOrgIdFromEnv,
               updated_at: new Date().toISOString()
             })
-            .eq('id', existingUserByEmail.id);
+            .eq('id', existingClerkUser.id);
           if (updateError) {
             console.error('Error upgrading guest user:', updateError);
             throw updateError;
           }
           console.log('User upgraded from guest to full user for Clerk ID:', userData.id);
-          break;
+          return new Response(JSON.stringify({ 
+            status: 'success',
+            message: 'User upgraded from guest to full user',
+            userId: existingClerkUser.id
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
-    
-        // If not found by email, check if clerk_user_id already exists (should be rare)
-        const { data: existingUser, error: checkError } = await supabaseAdmin
-          .from('clerk_users')
-          .select('id')
-          .eq('clerk_user_id', userData.id)
-          .maybeSingle();
-    
-        if (checkError) {
-           console.error('Error checking for existing clerk user:', checkError);
-           throw checkError;
-        }
-    
-        if (existingUser) {
-          console.log('Clerk user already exists in DB, skipping creation for Clerk ID:', userData.id);
-          break;
-        }
-    
-        // Create new clerk user
-        const { error: insertError } = await supabaseAdmin
+
+        // If not found in clerk_users table, create new clerk user
+        console.log('No existing clerk user found, creating new clerk user');
+        const { data: newUser, error: insertError } = await supabaseAdmin
           .from('clerk_users')
           .insert({
              clerk_user_id: userData.id,
@@ -196,14 +197,23 @@ Deno.serve(async (req) => {
              first_name: userData.first_name,
              last_name: userData.last_name,
              organization_id: defaultOrgIdFromEnv
-          });
+          })
+          .select()
+          .single();
     
         if (insertError) {
           console.error('Error inserting clerk user:', insertError);
           throw insertError;
         }
-        console.log('Successfully inserted clerk user for Clerk ID:', userData.id);
-        break;
+        console.log('Successfully inserted new clerk user:', newUser);
+        return new Response(JSON.stringify({ 
+          status: 'success',
+          message: 'Created new clerk user',
+          userId: newUser.id
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       } // End case 'user.created'
 
       case 'user.updated': {

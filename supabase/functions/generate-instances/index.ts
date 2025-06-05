@@ -9,21 +9,20 @@ import { corsHeaders } from '../_shared/cors.ts';
 // Debug logging
 console.log("Function starting...");
 console.log("ENVIRONMENT:", Deno.env.get("ENVIRONMENT") || "development");
-console.log("DB_URL:", Deno.env.get("SUPABASE_PROJECT_REF") ? "Set" : "Not set");
+console.log("DB_URL:", Deno.env.get("DB_URL") ? "Set" : "Not set");
 console.log("SERVICE_ROLE_KEY:", Deno.env.get("SERVICE_ROLE_KEY") ? "Set" : "Not set");
 console.log("TIMEZONE:", Deno.env.get("TIMEZONE") ? "Set" : "Not set");
 
 const SAUNA_TIMEZONE = Deno.env.get("TIMEZONE") || 'Europe/London';
-const DB_URL = Deno.env.get("SUPABASE_URL");
+const DB_URL = Deno.env.get("DB_URL");
 if (!DB_URL) {
-  throw new Error("SUPABASE_URL environment variable is required");
+  throw new Error("DB_URL environment variable is required");
 }
 
 console.log("Debug - Environment variables:", {
-  SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
-  SUPABASE_PROJECT_REF: Deno.env.get("SUPABASE_PROJECT_REF"),
+  DB_URL: Deno.env.get("DB_URL"),
   ENVIRONMENT: Deno.env.get("ENVIRONMENT"),
-  DB_URL
+  TIMEZONE: Deno.env.get("TIMEZONE")
 });
 
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY");
