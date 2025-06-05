@@ -137,7 +137,40 @@ Deno.serve(async (req) => {
            return new Response('Webhook Error: User created without primary email', { status: 400 });
         }
     
-        // Check if clerk user already exists
+        // Check if user with this email already exists (guest upgrade logic)
+        const { data: existingUserByEmail, error: checkEmailError } = await supabaseAdmin
+          .from('clerk_users')
+          .select('*')
+          .eq('email', primaryEmail)
+          .maybeSingle();
+    
+        if (checkEmailError && checkEmailError.code !== 'PGRST116') {
+           console.error('Error checking for existing user by email:', checkEmailError);
+           throw checkEmailError;
+        }
+    
+        if (existingUserByEmail) {
+          // Upgrade guest to full user
+          console.log('Existing user found by email, upgrading:', existingUserByEmail.id);
+          const { error: updateError } = await supabaseAdmin
+            .from('clerk_users')
+            .update({
+              clerk_user_id: userData.id,
+              first_name: userData.first_name,
+              last_name: userData.last_name,
+              organization_id: defaultOrgIdFromEnv,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingUserByEmail.id);
+          if (updateError) {
+            console.error('Error upgrading guest user:', updateError);
+            throw updateError;
+          }
+          console.log('User upgraded from guest to full user for Clerk ID:', userData.id);
+          break;
+        }
+    
+        // If not found by email, check if clerk_user_id already exists (should be rare)
         const { data: existingUser, error: checkError } = await supabaseAdmin
           .from('clerk_users')
           .select('id')

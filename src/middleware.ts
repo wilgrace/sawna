@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/',
   '/booking(.*)',
+  '/booking/confirmation(.*)',
   '/api/webhooks(.*)'  // Add webhook endpoints as public routes
 ]);
 

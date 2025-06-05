@@ -71,23 +71,53 @@ export async function POST(req: Request) {
         organization_id: defaultOrgId
       };
       
-      console.log('Attempting to insert user:', userData);
-      
-      // Add user to local database using Supabase
-      const { data, error } = await supabase
+      console.log('Checking for existing user by email:', userData.email);
+      // Check for existing user by email
+      const { data: existingUser, error: checkError } = await supabase
         .from('clerk_users')
-        .insert(userData)
-        .select()
+        .select('*')
+        .eq('email', userData.email)
         .single();
       
-      if (error) {
-        throw error;
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
       }
-      
-      console.log('Insert result:', data);
-      console.log('User added to local database successfully');
+
+      if (existingUser) {
+        // Update the existing user (upgrade guest to full user)
+        console.log('Existing user found, updating:', existingUser.id);
+        const { data: updated, error: updateError } = await supabase
+          .from('clerk_users')
+          .update({
+            clerk_user_id: userData.clerk_user_id,
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            updated_at: userData.updated_at,
+            organization_id: userData.organization_id
+          })
+          .eq('id', existingUser.id)
+          .select()
+          .single();
+        if (updateError) {
+          throw updateError;
+        }
+        console.log('User upgraded from guest to full user:', updated);
+      } else {
+        // Insert new user
+        console.log('No existing user found, inserting new user:', userData);
+        const { data, error } = await supabase
+          .from('clerk_users')
+          .insert(userData)
+          .select()
+          .single();
+        if (error) {
+          throw error;
+        }
+        console.log('Insert result:', data);
+        console.log('User added to local database successfully');
+      }
     } catch (error) {
-      console.error('Error adding user to local database:', error);
+      console.error('Error adding or updating user in local database:', error);
       if (error instanceof Error) {
         console.error('Error details:', {
           message: error.message,
@@ -95,7 +125,7 @@ export async function POST(req: Request) {
           name: error.name
         });
       }
-      return new Response('Error adding user to database', {
+      return new Response('Error adding or updating user in database', {
         status: 500
       });
     }

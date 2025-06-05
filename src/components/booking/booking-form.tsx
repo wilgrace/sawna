@@ -74,11 +74,14 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
 
       if (!user) {
         // For non-logged in users, create a new clerk user
+        const nameParts = name.trim().split(" ");
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : undefined;
         const result = await createClerkUser({
           clerk_user_id: `guest_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
           email: email,
-          first_name: name.split(" ")[0],
-          last_name: name.split(" ").slice(1).join(" ")
+          first_name: firstName,
+          last_name: lastName
         })
 
         if (!result.success || !result.id) {
@@ -164,29 +167,13 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
           throw new Error(result.error || "Failed to create booking")
         }
 
-        // Save booking details to localStorage for toast on /booking
+        // After successful booking, redirect to confirmation page with bookingId
         if (user) {
-          const bookingDetails = {
-            sessionName: session.name,
-            date: startTime.toISOString(),
-            numberOfSpots,
-            bookingId: result.id,
-            sessionId: session.id
-          }
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('bookingConfirmation', JSON.stringify(bookingDetails))
-          }
-          router.push("/booking")
+          router.push(`/booking/confirmation?bookingId=${result.id}`)
           return
         }
-
-        toast({
-          title: "Success",
-          description: "Session booked successfully",
-        })
+        router.push(`/booking/confirmation?bookingId=${result.id}`)
       }
-      
-      router.push("/booking/confirmation")
     } catch (error: any) {
       console.error("Error managing booking:", error)
       toast({
