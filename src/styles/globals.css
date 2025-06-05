@@ -88,3 +88,18 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Force Radix Toast viewport to always be top right */
+[data-radix-toast-viewport] {
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  left: auto !important;
+  bottom: auto !important;
+  width: 384px; /* 24rem, matches w-96 */
+  max-width: 100vw;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

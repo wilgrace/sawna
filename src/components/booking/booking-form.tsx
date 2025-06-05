@@ -131,6 +131,21 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
           throw new Error(result.error || "Failed to update booking")
         }
 
+        // Save update details to localStorage for toast on /booking
+        if (user) {
+          const updateDetails = {
+            type: "update",
+            sessionName: session.name,
+            date: startTime?.toISOString() || new Date().toISOString(),
+            numberOfSpots,
+          }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('bookingAction', JSON.stringify(updateDetails))
+          }
+          router.push("/booking")
+          return
+        }
+
         toast({
           title: "Success",
           description: "Booking updated successfully",
@@ -147,6 +162,22 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
 
         if (!result.success) {
           throw new Error(result.error || "Failed to create booking")
+        }
+
+        // Save booking details to localStorage for toast on /booking
+        if (user) {
+          const bookingDetails = {
+            sessionName: session.name,
+            date: startTime.toISOString(),
+            numberOfSpots,
+            bookingId: result.id,
+            sessionId: session.id
+          }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('bookingConfirmation', JSON.stringify(bookingDetails))
+          }
+          router.push("/booking")
+          return
         }
 
         toast({
@@ -181,13 +212,24 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
         throw new Error(result.error || "Failed to cancel booking")
       }
 
+      // Save delete details to localStorage for toast on /booking
+      if (user) {
+        const deleteDetails = {
+          type: "delete",
+          sessionName: session.name,
+          date: startTime?.toISOString() || new Date().toISOString(),
+          numberOfSpots,
+        }
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('bookingAction', JSON.stringify(deleteDetails))
+        }
+        router.push("/booking")
+        return
+      }
       toast({
         title: "Success",
         description: "Booking cancelled successfully",
       })
-      
-      // Force a hard navigation to ensure the page is fully reloaded
-      window.location.href = "/booking"
     } catch (error: any) {
       console.error("Error cancelling booking:", error)
       toast({

@@ -4,6 +4,7 @@ import { BookingCalendar } from "@/components/booking/booking-calendar"
 import { UpcomingBookings } from "@/components/booking/upcoming-bookings"
 import { Skeleton } from "@/components/ui/skeleton"
 import { auth } from "@clerk/nextjs/server"
+import { BookingConfirmationToast } from "@/components/booking/booking-confirmation-toast"
 
 export default async function BookingPage() {
   const { userId } = await auth()
@@ -22,6 +23,7 @@ export default async function BookingPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">      
+      <BookingConfirmationToast />
       <div className="grid gap-8">
         {userId && <UpcomingBookings bookings={bookings || []} />}
         
