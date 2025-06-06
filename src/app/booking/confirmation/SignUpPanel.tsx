@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { createClient } from "@supabase/supabase-js"
+import { dark } from "@clerk/themes"
 
 export type SignUpPanelProps = {
   initialValues: {
@@ -19,6 +20,12 @@ export default function SignUpPanel({ initialValues }: SignUpPanelProps) {
   const appearance = {
     elements: {
       card: "shadow-none border-none",
+      cardBox: "shadow-none border-none",
+      formButtonPrimary: "bg-sky-500 text-white hover:bg-sky-600",
+      formFieldInput: "bg-white text-slate-950 border-slate-200",
+      formFieldLabel: "text-slate-950",
+      formFieldAction: "text-sky-500 hover:text-sky-600",
+      footerActionLink: "text-sky-500 hover:text-sky-600",
     },
   };
 
@@ -86,13 +93,7 @@ export default function SignUpPanel({ initialValues }: SignUpPanelProps) {
   }, [isLoaded, user, router]);
 
   return (
-    <div className="w-full max-w-md bg-white rounded-lg shadow p-6 mb-6">
-      <h2 className="text-2xl font-bold mb-2 text-center">Create An Account</h2>
-      <ul className="mb-6 text-gray-700 space-y-2 text-sm">
-        <li>• View and manage all your bookings</li>
-        <li>• Get booking reminders and updates</li>
-        <li>• Priority access to new locations</li>
-      </ul>
+    <div className="w-full max-w-md bg-white rounded-lg p-6 mb-6">
       <SignUp
         routing="hash"
         fallbackRedirectUrl="/booking"
@@ -101,8 +102,8 @@ export default function SignUpPanel({ initialValues }: SignUpPanelProps) {
       />
       {waiting && (
         <div className="flex flex-col items-center mt-6">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mb-2"></div>
-          <div className="text-gray-700 text-sm">Finalizing your account…</div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500 mb-2"></div>
+          <div className="text-slate-600 text-sm">Finalizing your account…</div>
         </div>
       )}
       {waitError && (
