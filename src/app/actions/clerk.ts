@@ -94,7 +94,7 @@ async function createClerkUser(params: { clerk_user_id?: string; email: string; 
     }
 
     // Get the organization ID to use
-    const orgId = params.organization_id || '11111111-1111-1111-1111-111111111111';
+    const orgId = params.organization_id || process.env.DEFAULT_ORGANIZATION_ID;
     if (!orgId) {
       console.error("No valid organization_id found for clerk user creation.", { params })
       return {
@@ -200,8 +200,15 @@ async function ensureClerkUser(clerkUserId: string, email: string, firstName: st
     console.log("Creating new clerk user...")
 
     // If user doesn't exist, create them
-    // Use the hardcoded organization ID
-    const orgId = '11111111-1111-1111-1111-111111111111';
+    // Use the default organization ID from environment variables
+    const orgId = process.env.DEFAULT_ORGANIZATION_ID;
+    if (!orgId) {
+      console.error("DEFAULT_ORGANIZATION_ID environment variable is not set")
+      return {
+        success: false,
+        error: "DEFAULT_ORGANIZATION_ID environment variable is not set"
+      }
+    }
 
     const { data: newUser, error: createError } = await supabase
       .from("clerk_users")
