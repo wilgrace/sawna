@@ -26,7 +26,7 @@ export function UpcomingBookings({ bookings, className }: UpcomingBookingsProps)
   }
 
   return (
-    <div className={cn("mb-6 rounded-lg border overflow-hidden", className)}>
+    <div className={cn("mb-6 rounded-lg border overflow-hidden md:mb-0 mx-4 md:mx-0 mt-4 md:mt-0", className)}>
       <div className="bg-gray-50 px-4 py-3 flex items-center justify-between">
         <h2 className="text-base font-medium">Upcoming Bookings</h2>
         <FAQDialog />
