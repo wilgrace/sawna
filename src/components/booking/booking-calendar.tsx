@@ -146,18 +146,11 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
         const endTime = new Date(instance.end_time);
         const formattedStartTime = format(startTime, 'h:mm a');
         const formattedEndTime = format(endTime, 'h:mm a');
-        // Debug log for bookings and user IDs
-        if (instance.bookings && instance.bookings.length > 0) {
-          instance.bookings.forEach(b => {
-            console.log('Instance:', instance.id, 'BookingId:', b.id, 'User:', b.user, 'UserId:', b.user && ('id' in b.user ? b.user.id : undefined), 'ClerkUserId:', b.user?.clerk_user_id, 'InternalUserId:', internalUserId);
-          });
-        } else {
-          console.log('Instance:', instance.id, 'No bookings', 'InternalUserId:', internalUserId);
-        }
-        // Use internalUserId for booking check
+        
         const userBooking = instance.bookings?.find(booking => {
           return booking.user && booking.user.clerk_user_id === user?.id;
         });
+        
         return {
           id: instance.id,
           title: `${formattedStartTime} – ${formattedEndTime}: ${template.name}`,
@@ -325,13 +318,15 @@ export function BookingCalendar({ sessions }: BookingCalendarProps) {
   // For mobile view
   if (isMobile) {
     return (
-      <div className="flex flex-col h-[calc(100vh-80px)]">
-        <MobileCalendarView
-          currentDate={currentDate}
-          selectedDate={selectedDate}
-          onDateSelect={handleDateSelect}
-          sessions={sessions}
-        />
+      <div className="flex flex-col h-full">
+        <div className="flex-none">
+          <MobileCalendarView
+            currentDate={currentDate}
+            selectedDate={selectedDate}
+            onDateSelect={handleDateSelect}
+            sessions={sessions}
+          />
+        </div>
         <div className="flex-1 overflow-y-auto">
           <MobileSessionList
             sessions={sessions}

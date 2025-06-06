@@ -22,14 +22,16 @@ export default async function BookingPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">      
+    <div className="h-full md:container md:mx-auto md:px-4 md:py-8">      
       <BookingConfirmationToast />
-      <div className="grid gap-8">
+      <div className="h-full flex flex-col md:grid md:gap-8">
         {userId && <UpcomingBookings bookings={bookings || []} />}
         
-        <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
-          <BookingCalendar sessions={sessions || []} />
-        </Suspense>
+        <div className="flex-1 flex flex-col min-h-0 md:block">
+          <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
+            <BookingCalendar sessions={sessions || []} />
+          </Suspense>
+        </div>
       </div>
     </div>
   )

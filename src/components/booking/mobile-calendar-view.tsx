@@ -15,6 +15,8 @@ import {
 } from "date-fns"
 import { SessionTemplate } from "@/types/session"
 import { useRouter } from "next/navigation"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface MobileCalendarViewProps {
   currentDate: Date
@@ -27,12 +29,13 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
   const router = useRouter()
   const [viewDate, setViewDate] = useState(currentDate)
 
-  // Update view month when selected date changes to a different month
+  // Only update viewDate when selectedDate changes to a different month
+  // and when it's not already in the same month as viewDate
   useEffect(() => {
     if (!isSameMonth(selectedDate, viewDate)) {
       setViewDate(selectedDate)
     }
-  }, [selectedDate, viewDate])
+  }, [selectedDate])
 
   const monthStart = startOfMonth(viewDate)
   const monthEnd = endOfMonth(viewDate)
@@ -40,10 +43,6 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
 
   // Get the day names for the header
   const dayNames = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-
-  // Navigate to previous/next month
-  const prevMonth = () => setViewDate(subMonths(viewDate, 1))
-  const nextMonth = () => setViewDate(addMonths(viewDate, 1))
 
   // Get sessions for a specific day
   const getSessionsForDay = (day: Date) => {
@@ -90,27 +89,41 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
     onDateSelect(day)
   }
 
+  const handlePrevMonth = () => {
+    setViewDate(prev => subMonths(prev, 1))
+  }
+
+  const handleNextMonth = () => {
+    setViewDate(prev => addMonths(prev, 1))
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-sm sticky top-0 z-10">
       {/* Month title */}
       <div className="flex items-center justify-between p-4 border-b">
-        <button
-          onClick={prevMonth}
-          className="p-2 hover:bg-gray-100 rounded-full"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handlePrevMonth}
+          className="h-8 w-8"
         >
-          ←
-        </button>
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
         <h2 className="text-2xl font-bold">
           <span>
             {format(viewDate, "MMMM")} <span className="text-primary">{format(viewDate, "yyyy")}</span>
           </span>
         </h2>
-        <button
-          onClick={nextMonth}
-          className="p-2 hover:bg-gray-100 rounded-full"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleNextMonth}
+          className="h-8 w-8"
         >
-          →
-        </button>
+          <ChevronRight className="h-5 w-5" />
+        </Button>
       </div>
 
       {/* Day names header */}
@@ -134,11 +147,14 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
           const isSelected = isSameDay(day, selectedDate)
           const isCurrentMonth = isSameMonth(day, viewDate)
           const isPastDay = isPast(day) && !isToday(day)
+          const daySessions = getSessionsForDay(day)
+          const displaySessions = daySessions.slice(0, 4)
 
           return (
-            <div key={i} className={`py-2 ${startSpacing} ${!isCurrentMonth ? "text-gray-400" : ""}`}>
+            <div key={i} className={`${startSpacing} ${!isCurrentMonth ? "text-gray-400" : ""}`}>
               <button
-                className={`w-10 h-10 flex flex-col items-center justify-center rounded-full ${
+                type="button"
+                className={`w-full h-full min-h-[80px] flex flex-col items-center justify-center p-2 rounded-full ${
                   isSelected ? "bg-primary text-white" : 
                   isPastDay ? "text-gray-400" : 
                   "hover:bg-gray-100"
@@ -146,9 +162,15 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
                 onClick={() => !isPastDay && handleDayClick(day)}
                 disabled={isPastDay}
               >
-                <span>{format(day, "d")}</span>
+                <span className="text-lg mb-1">{format(day, "d")}</span>
+                {displaySessions.length > 0 && (
+                  <div className="flex justify-center space-x-0.5">
+                    {displaySessions.map((_, index) => (
+                      <div key={index} className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    ))}
+                  </div>
+                )}
               </button>
-              {renderSessionDots(day)}
             </div>
           )
         })}

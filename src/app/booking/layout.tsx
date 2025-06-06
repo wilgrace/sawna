@@ -13,7 +13,7 @@ export default async function BookingLayout({
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <BookingHeader isAdmin={isAdmin} />
-      <main className="flex-1 overflow-auto p-6">{children}</main>
+      <main className="flex-1 overflow-auto md:p-6">{children}</main>
     </div>
   )
 }
