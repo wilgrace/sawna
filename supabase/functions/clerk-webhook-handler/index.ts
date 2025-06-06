@@ -9,6 +9,7 @@ if (!clerkSecretKey) {
   throw new Error('CLERK_SECRET_KEY environment variable is not set');
 }
 const clerk = Clerk({ secretKey: clerkSecretKey });
+const clerkClient = Clerk({ secretKey: clerkSecretKey });  // Add clerkClient instance
 
 // Define expected Clerk event payload structure (adjust based on actual usage)
 interface ClerkUserEventData {
@@ -62,80 +63,52 @@ interface ClerkEvent {
 console.log('Clerk Webhook Handler Function Initializing');
 
 Deno.serve(async (req) => {
-  // --- 1. Check Method and Retrieve Secrets ---
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS request');
-    return new Response('ok', { headers: corsHeaders }); // Handle CORS preflight
+    return new Response('ok', { headers: corsHeaders });
   }
   if (req.method !== 'POST') {
-    console.error('Invalid method:', req.method);
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // Check if this is a test event (no signature headers)
   const svix_id = req.headers.get('svix-id');
   const svix_timestamp = req.headers.get('svix-timestamp');
   const svix_signature = req.headers.get('svix-signature');
   const isTestEvent = !svix_id && !svix_timestamp && !svix_signature;
 
-  // For test events, we don't need to check for secrets
   if (!isTestEvent) {
     const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
     const supabaseUrl = Deno.env.get('DB_URL');
     const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_KEY');
     const defaultOrgId = Deno.env.get('DEFAULT_ORGANIZATION_ID');
-
     if (!webhookSecret || !supabaseUrl || !supabaseServiceKey || !defaultOrgId) {
-      console.error('Missing environment variables:', {
-        hasWebhookSecret: !!webhookSecret,
-        hasSupabaseUrl: !!supabaseUrl,
-        hasServiceKey: !!supabaseServiceKey,
-        hasDefaultOrgId: !!defaultOrgId,
-        envKeys: Object.keys(Deno.env.toObject())
-      });
+      console.error('Missing environment variables');
       return new Response('Internal Server Error: Missing configuration', { status: 500 });
     }
   }
 
-  // --- 2. Initialize Supabase Admin Client ---
   const supabaseUrl = Deno.env.get('DB_URL');
   const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_KEY');
-  
-  console.log('Initializing Supabase client with URL:', supabaseUrl);
-  
   const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+    auth: { autoRefreshToken: false, persistSession: false },
   });
-  console.log('Supabase admin client initialized');
 
-  const body = await req.text(); // Read body as text for verification
+  const body = await req.text();
   let event: ClerkEvent;
-  
+
   if (isTestEvent) {
-    // For test events, just parse the body directly
     try {
       event = JSON.parse(body) as ClerkEvent;
-      console.log('Test event received:', event.type);
     } catch (err: any) {
-      console.error('Error parsing test event:', err?.message || err);
       return new Response('Invalid JSON in test event', { status: 400 });
     }
   } else {
-    // For real events, verify the signature
     const webhookSecret = Deno.env.get('CLERK_WEBHOOK_SIGNING_SECRET');
     if (!webhookSecret) {
-      console.error('Missing webhook secret');
       return new Response('Internal Server Error: Missing webhook secret', { status: 500 });
     }
-
     if (!svix_id || !svix_timestamp || !svix_signature) {
-      console.error('Missing svix headers');
       return new Response('Webhook Error: Missing svix headers', { status: 400 });
     }
-
     const wh = new Webhook(webhookSecret);
     try {
       event = wh.verify(body, {
@@ -143,51 +116,37 @@ Deno.serve(async (req) => {
         'svix-timestamp': svix_timestamp,
         'svix-signature': svix_signature,
       }) as ClerkEvent;
-      console.log('Webhook verified successfully. Event type:', event.type);
     } catch (err: any) {
-      console.error('Webhook verification failed:', err?.message || err);
       return new Response(`Webhook Error: ${err?.message || err}`, { status: 400 });
     }
   }
 
-  // --- 4. Process Verified Event ---
   try {
     switch (event.type) {
       case 'user.created': {
-        console.log('Processing user.created event for Clerk ID:', event.data.id);
         const userData = event.data as ClerkUserEventData;
         const primaryEmail = userData.email_addresses?.[0]?.email_address;
-    
-        // --- Read the Default Org ID ---
         const defaultOrgIdFromEnv = Deno.env.get('DEFAULT_ORGANIZATION_ID');
         if (!defaultOrgIdFromEnv) {
-             console.error('CRITICAL: DEFAULT_ORGANIZATION_ID environment variable is not set!');
-             return new Response('Server Configuration Error: Default organization not set', { status: 500 });
+          console.error('CRITICAL: DEFAULT_ORGANIZATION_ID environment variable is not set!');
+          return new Response('Server Configuration Error: Default organization not set', { status: 500 });
         }
-        // --- End Reading Default Org ID ---
-    
         if (!primaryEmail) {
-           console.error('User created event missing primary email for Clerk ID:', userData.id);
-           return new Response('Webhook Error: User created without primary email', { status: 400 });
+          console.error('User created event missing primary email for Clerk ID:', userData.id);
+          return new Response('Webhook Error: User created without primary email', { status: 400 });
         }
-
-        console.log('Processing user creation for email:', primaryEmail);
-    
-        // First check if user exists in clerk_users table
+        // Check if user exists in clerk_users table
         const { data: existingClerkUser, error: checkClerkError } = await supabaseAdmin
           .from('clerk_users')
           .select('*')
           .eq('email', primaryEmail)
           .maybeSingle();
-    
         if (checkClerkError && checkClerkError.code !== 'PGRST116') {
-           console.error('Error checking for existing clerk user:', checkClerkError);
-           throw checkClerkError;
+          console.error('Error checking for existing clerk user:', checkClerkError);
+          throw checkClerkError;
         }
-    
         if (existingClerkUser) {
           // Upgrade guest to full user
-          console.log('Existing clerk user found, upgrading:', existingClerkUser.id);
           const { error: updateError } = await supabaseAdmin
             .from('clerk_users')
             .update({
@@ -202,186 +161,51 @@ Deno.serve(async (req) => {
             console.error('Error upgrading guest user:', updateError);
             throw updateError;
           }
-          console.log('User upgraded from guest to full user for Clerk ID:', userData.id);
+          // Create organization membership in Clerk
+          try {
+            await clerk.organizations.createOrganizationMembership({
+              organizationId: defaultOrgIdFromEnv,
+              userId: userData.id,
+              role: 'org:user'
+            });
+          } catch (clerkError: any) {
+            console.error('Error in Clerk operations:', clerkError);
+          }
           return new Response(JSON.stringify({ 
             status: 'success',
-            message: 'User upgraded from guest to full user',
+            message: 'User upgraded and added to organization',
             userId: existingClerkUser.id
           }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-
         // If not found in clerk_users table, create new clerk user
-        console.log('No existing clerk user found, creating new clerk user');
         const { data: newUser, error: insertError } = await supabaseAdmin
           .from('clerk_users')
           .insert({
-             clerk_user_id: userData.id,
-             email: primaryEmail,
-             first_name: userData.first_name,
-             last_name: userData.last_name,
-             organization_id: defaultOrgIdFromEnv
+            clerk_user_id: userData.id,
+            email: primaryEmail,
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            organization_id: defaultOrgIdFromEnv
           })
           .select()
           .single();
-    
         if (insertError) {
           console.error('Error inserting clerk user:', insertError);
           throw insertError;
         }
-
         // Create organization membership in Clerk
         try {
-          if (!clerkSecretKey) {
-            throw new Error('CLERK_SECRET_KEY is not set');
-          }
-          
-          console.log('Creating organization membership in Clerk:', {
+          await clerk.organizations.createOrganizationMembership({
             organizationId: defaultOrgIdFromEnv,
-            userId: userData.id
+            userId: userData.id,
+            role: 'org:user'
           });
-
-          // First, verify the organization exists in Clerk
-          try {
-            const org = await clerk.organizations.getOrganization({ organizationId: defaultOrgIdFromEnv });
-            console.log('Organization exists in Clerk:', {
-              id: org.id,
-              name: org.name
-            });
-          } catch (orgError: any) {
-            console.error('Error verifying organization in Clerk:', {
-              error: orgError,
-              status: orgError.status,
-              message: orgError.message,
-              details: orgError.errors
-            });
-            throw orgError;
-          }
-
-          // Verify the user exists in Clerk
-          try {
-            const user = await clerk.users.getUser(userData.id);
-            console.log('User exists in Clerk:', {
-              id: user.id,
-              email: user.emailAddresses[0]?.emailAddress
-            });
-          } catch (userError: any) {
-            console.error('Error verifying user in Clerk:', {
-              error: userError,
-              status: userError.status,
-              message: userError.message,
-              details: userError.errors
-            });
-            throw userError;
-          }
-
-          // Add a small delay to ensure user is fully created
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          // Check if user is already a member
-          try {
-            const memberships = await clerk.organizations.getOrganizationMembershipList({
-              organizationId: defaultOrgIdFromEnv
-            });
-            
-            const isAlreadyMember = memberships.some((m: { publicUserData?: { userId: string } }) => 
-              m.publicUserData?.userId === userData.id
-            );
-            if (isAlreadyMember) {
-              console.log('User is already a member of the organization');
-              return;
-            }
-          } catch (membershipError: any) {
-            console.error('Error checking existing memberships:', {
-              error: membershipError,
-              status: membershipError.status,
-              message: membershipError.message,
-              details: membershipError.errors
-            });
-            // Continue with creating membership even if check fails
-          }
-          
-          // Create the membership
-          try {
-            console.log('Attempting to create organization membership with:', {
-              organizationId: defaultOrgIdFromEnv,
-              userId: userData.id,
-              role: "org:user"
-            });
-
-            // Create the membership using the Clerk instance
-            const membership = await clerk.organizations.createOrganizationMembership({
-              organizationId: defaultOrgIdFromEnv,
-              userId: userData.id,
-              role: "org:user"
-            });
-
-            console.log('Successfully created organization membership:', {
-              organizationId: membership.organizationId,
-              userId: membership.publicUserData?.userId,
-              role: membership.role
-            });
-          } catch (membershipError: any) {
-            console.error('Error creating organization membership:', {
-              error: membershipError,
-              status: membershipError.status,
-              message: membershipError.message,
-              details: membershipError.errors,
-              requestData: {
-                organizationId: defaultOrgIdFromEnv,
-                userId: userData.id
-              }
-            });
-
-            // Try to get more information about the error
-            if (membershipError.status === 404) {
-              try {
-                // Double check the organization exists
-                const orgCheck = await clerk.organizations.getOrganization({
-                  organizationId: defaultOrgIdFromEnv
-                });
-                console.log('Organization check result:', {
-                  exists: !!orgCheck,
-                  id: orgCheck?.id,
-                  name: orgCheck?.name
-                });
-
-                // Double check the user exists
-                const userCheck = await clerk.users.getUser(userData.id);
-                console.log('User check result:', {
-                  exists: !!userCheck,
-                  id: userCheck?.id,
-                  email: userCheck?.emailAddresses[0]?.emailAddress
-                });
-              } catch (checkError: any) {
-                console.error('Error during verification checks:', {
-                  error: checkError,
-                  message: checkError.message
-                });
-              }
-            }
-
-            throw membershipError;
-          }
         } catch (clerkError: any) {
-          console.error('Error in Clerk operations:', {
-            error: clerkError,
-            status: clerkError.status,
-            message: clerkError.message,
-            details: clerkError.errors
-          });
-          // Log the environment variables (without sensitive values)
-          console.log('Environment check:', {
-            hasClerkSecretKey: !!clerkSecretKey,
-            hasDefaultOrgId: !!defaultOrgIdFromEnv,
-            envKeys: Object.keys(Deno.env.toObject())
-          });
-          // Don't throw here, as the user is already created in Supabase
+          console.error('Error in Clerk operations:', clerkError);
         }
-
-        console.log('Successfully inserted new clerk user:', newUser);
         return new Response(JSON.stringify({ 
           status: 'success',
           message: 'Created new clerk user',
@@ -390,10 +214,9 @@ Deno.serve(async (req) => {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
-      } // End case 'user.created'
+      }
 
       case 'user.updated': {
-        console.log('Processing user.updated event for Clerk ID:', event.data.id);
         const userData = event.data as ClerkUserEventData; // Cast to expected structure
         const primaryEmail = userData.email_addresses?.[0]?.email_address;
 
