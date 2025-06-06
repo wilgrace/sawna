@@ -7,20 +7,31 @@ import { SessionTemplate } from "@/types/session"
 interface SessionDetailsProps {
   session: SessionTemplate
   startTime?: Date
+  currentUserSpots?: number
 }
 
-export function SessionDetails({ session, startTime }: SessionDetailsProps) {
+export function SessionDetails({ session, startTime, currentUserSpots = 0 }: SessionDetailsProps) {
+  // Calculate total spots booked, including current user's spots
+  const totalSpotsBooked = (session.instances?.reduce((total, instance) => {
+    return total + (instance.bookings?.reduce((sum, booking) => sum + (booking.number_of_spots || 1), 0) || 0)
+  }, 0) || 0) + currentUserSpots
+
+  // Calculate spots remaining
+  const spotsRemaining = session.capacity - totalSpotsBooked
+
   return (
-    <Card>
+    <Card className="border-0 shadow-none md:border md:shadow">
       <CardContent className="p-6 space-y-6">
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-bold">{session.name}</h2>
             {startTime && (
-              <p className="text-muted-foreground">
-                {format(startTime, "EEEE, MMMM d, yyyy 'at' h:mm a")}
-              </p>
+              <h2 className="text-2xl font-bold">
+                {format(startTime, "h:mma")} • {format(startTime, "EEEE d MMMM")}
+              </h2>
             )}
+            <p className="text-muted-foreground text-lg">
+              {session.name}
+            </p>
           </div>
 
           <div className="prose prose-sm">
@@ -33,12 +44,8 @@ export function SessionDetails({ session, startTime }: SessionDetailsProps) {
               <p>{session.duration_minutes} minutes</p>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Capacity</h3>
-              <p>{session.capacity} people</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Status</h3>
-              <p>{session.is_open ? "Open" : "Closed"}</p>
+              <h3 className="text-sm font-medium text-muted-foreground">Availability</h3>
+              <p>{spotsRemaining} of {session.capacity} spots</p>
             </div>
           </div>
         </div>

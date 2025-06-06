@@ -230,11 +230,8 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{isEditMode ? "Modify Booking" : "Book This Session"}</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Card className="border-0 shadow-none md:border md:shadow">
+      <CardContent className="p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
@@ -256,16 +253,6 @@ export function BookingForm({ session, startTime, bookingDetails }: BookingFormP
               onChange={(e) => setEmail(e.target.value)}
               disabled={!!user}
               placeholder={user ? "" : "Enter your email"}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notes">Special Requests (Optional)</Label>
-            <Textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any special requests or requirements?"
             />
           </div>
 

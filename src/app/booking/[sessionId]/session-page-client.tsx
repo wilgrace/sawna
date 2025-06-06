@@ -244,18 +244,25 @@ export function SessionPageClient({ sessionId, searchParams }: SessionPageClient
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="mb-4">
+    <div className="container mx-auto py-4 md:py-0">
+      <div>
         <Link href="/booking">
           <Button variant="ghost" className="gap-2">
             <ChevronLeft className="h-4 w-4" />
-            Back to Calendar
+            Back
           </Button>
         </Link>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        <SessionDetails session={session} startTime={startTime || undefined} />
+      <div className="grid md:grid-cols-2 md:gap-8">
+        <SessionDetails 
+          session={session} 
+          startTime={startTime || undefined} 
+          currentUserSpots={bookingDetails?.number_of_spots || 0}
+        />
+        <div className="md:hidden">
+          <hr className="border-gray-200 my-0 mx-6" />
+        </div>
         <BookingForm 
           session={session} 
           startTime={startTime || undefined}

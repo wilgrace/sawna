@@ -151,10 +151,10 @@ export function MobileCalendarView({ currentDate, selectedDate, onDateSelect, se
           const displaySessions = daySessions.slice(0, 4)
 
           return (
-            <div key={i} className={`${startSpacing} ${!isCurrentMonth ? "text-gray-400" : ""}`}>
+            <div key={i} className={`p-2 ${startSpacing} ${!isCurrentMonth ? "text-gray-400" : ""}`}>
               <button
                 type="button"
-                className={`w-full h-full min-h-[80px] flex flex-col items-center justify-center p-2 rounded-full ${
+                className={`aspect-square w-full flex flex-col items-center justify-center rounded-full ${
                   isSelected ? "bg-primary text-white" : 
                   isPastDay ? "text-gray-400" : 
                   "hover:bg-gray-100"
