@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { List, ChevronLeft, ChevronRight, Calendar, ChevronDown, RefreshCw } from "lucide-react"
+import { List, ChevronLeft, ChevronRight, Calendar, ChevronDown, RefreshCw, Trash2, Pencil } from "lucide-react"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfWeek as dateFnsStartOfWeek, endOfWeek as dateFnsEndOfWeek, startOfDay, endOfDay, getDay } from "date-fns"
 import { SessionTemplate } from "@/types/session"
 import { cn } from "@/lib/utils"
@@ -49,6 +49,7 @@ interface CalendarViewProps {
   sessions: SessionTemplate[]
   onEditSession: (session: SessionTemplate) => void
   onCreateSession: (start: Date, end: Date) => void
+  onDeleteSession?: (session: SessionTemplate) => void
   showControls?: boolean
 }
 
@@ -90,7 +91,7 @@ const CustomEvent = ({ event }: EventProps<CalendarEvent>) => {
   )
 }
 
-export function CalendarView({ sessions, onEditSession, onCreateSession, showControls = true }: CalendarViewProps) {
+export function CalendarView({ sessions, onEditSession, onCreateSession, onDeleteSession, showControls = true }: CalendarViewProps) {
   const { view, setView, date, setDate } = useCalendarView()
   const [currentView, setCurrentView] = useState<View>('week')
   const [isMobile, setIsMobile] = useState(false)
@@ -450,18 +451,25 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                 <TableHead>Duration</TableHead>
                 <TableHead>Capacity</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sessions.map((template) => (
                 <TableRow
                   key={template.id}
-                  className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => onEditSession(template)}
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    // Don't trigger if clicking on the action buttons
+                    if ((e.target as HTMLElement).closest('button')) {
+                      return;
+                    }
+                    onEditSession(template);
+                  }}
                 >
                   <TableCell className="font-medium">{template.name}</TableCell>
                   <TableCell>
-                    {template.is_recurring && template.schedules && template.schedules.length > 0 ? (
+                    {template.is_recurring ? (
                       <div className="text-sm flex items-start gap-2">
                         <RefreshCw className="h-4 w-4 mt-1 flex-shrink-0" />
                         <div>
@@ -478,7 +486,7 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                           })}
                         </div>
                       </div>
-                    ) : !template.is_recurring && template.one_off_date && template.one_off_start_time ? (
+                    ) : template.one_off_date && template.one_off_start_time ? (
                       <div className="text-sm flex items-start gap-2">
                         <Calendar className="h-4 w-4 mt-1 flex-shrink-0" />
                         <div>
@@ -506,6 +514,36 @@ export function CalendarView({ sessions, onEditSession, onCreateSession, showCon
                     <Badge variant={template.is_open ? "success" : "secondary"}>
                       {template.is_open ? "Open" : "Closed"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive/90 hover:bg-transparent"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // We'll need to add a delete handler prop to the component
+                          if (onDeleteSession) {
+                            onDeleteSession(template);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Delete</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditSession(template);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Edit</span>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

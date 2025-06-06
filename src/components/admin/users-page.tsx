@@ -67,7 +67,17 @@ export function UsersPage({ initialUsers }: UsersPageProps) {
               </TableHeader>
               <TableBody>
                 {users.map((user) => (
-                  <TableRow key={user.id}>
+                  <TableRow 
+                    key={user.id}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      // Don't trigger if clicking on the action buttons
+                      if ((e.target as HTMLElement).closest('button')) {
+                        return;
+                      }
+                      handleEdit(user);
+                    }}
+                  >
                     <TableCell className="font-medium">{[user.first_name, user.last_name].filter(Boolean).join(" ")}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>{user.roleLabel || 'User'}</TableCell>
@@ -77,7 +87,8 @@ export function UsersPage({ initialUsers }: UsersPageProps) {
                           variant="ghost"
                           size="sm"
                           className="text-destructive hover:text-destructive/90 hover:bg-transparent"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setUserToDelete(user);
                             setShowDeleteDialog(true);
                           }}
@@ -88,7 +99,10 @@ export function UsersPage({ initialUsers }: UsersPageProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleEdit(user)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(user);
+                          }}
                         >
                           <Pencil className="h-4 w-4" />
                           <span className="sr-only">Edit</span>
