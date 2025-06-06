@@ -217,41 +217,68 @@ Deno.serve(async (req) => {
       }
 
       case 'user.updated': {
-        const userData = event.data as ClerkUserEventData; // Cast to expected structure
+        const userData = event.data as ClerkUserEventData;
         const primaryEmail = userData.email_addresses?.[0]?.email_address;
 
-         if (!primaryEmail) {
-           console.warn('User updated event missing primary email for Clerk ID:', userData.id, '- Skipping email update.');
-           // If email is critical, you might return an error instead.
-         }
+        if (!primaryEmail) {
+          console.warn('User updated event missing primary email for Clerk ID:', userData.id, '- Skipping email update.');
+          return new Response(JSON.stringify({ 
+            status: 'warning',
+            message: 'User updated without primary email'
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // First check if user exists by email (like in user.created)
+        const { data: existingClerkUser, error: checkClerkError } = await supabaseAdmin
+          .from('clerk_users')
+          .select('*')
+          .eq('email', primaryEmail)
+          .maybeSingle();
+
+        if (checkClerkError) {
+          console.error('Error checking for existing clerk user:', checkClerkError);
+          throw checkClerkError;
+        }
+
+        if (!existingClerkUser) {
+          console.warn('User not found for update:', primaryEmail);
+          return new Response(JSON.stringify({ 
+            status: 'warning',
+            message: 'User not found for update'
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
 
         const updateData: { email?: string; first_name?: string | null; last_name?: string | null; updated_at: string } = {
-          updated_at: new Date().toISOString() // Always update the timestamp
+          updated_at: new Date().toISOString()
         };
         if (primaryEmail) updateData.email = primaryEmail;
-        // Only include name fields if they are present in the payload
-        // (check if Clerk sends nulls explicitly or omits fields)
         if (userData.hasOwnProperty('first_name')) updateData.first_name = userData.first_name;
         if (userData.hasOwnProperty('last_name')) updateData.last_name = userData.last_name;
-
 
         const { error: updateError } = await supabaseAdmin
           .from('clerk_users')
           .update(updateData)
-          .eq('clerk_user_id', userData.id);
+          .eq('id', existingClerkUser.id);
 
         if (updateError) {
           console.error('Error updating clerk user:', updateError);
-          // Don't throw if user not found (e.g., maybe deleted before update processed)
-          if (updateError.code !== 'PGRST116') { // PGRST116: JSON object requested, multiple (or no) rows returned
-             throw updateError;
-          } else {
-             console.warn('Clerk user not found for update (Clerk ID:', userData.id, '), possibly already deleted.');
-          }
-        } else {
-            console.log('Successfully updated clerk user for Clerk ID:', userData.id);
+          throw updateError;
         }
-        break;
+
+        console.log('Successfully updated clerk user for email:', primaryEmail);
+        return new Response(JSON.stringify({ 
+          status: 'success',
+          message: 'User updated successfully'
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       case 'user.deleted': {
