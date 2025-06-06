@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { clerkClient } from '@clerk/clerk-sdk-node';
+import { auth } from '@clerk/nextjs/server';
 
 // Map role values to display labels
 const ROLE_LABELS: Record<string, string> = {
@@ -11,6 +12,12 @@ const ROLE_LABELS: Record<string, string> = {
 
 export async function GET() {
   try {
+    const session = await auth();
+    if (!session.orgId) {
+      console.error("No organization ID in session");
+      return NextResponse.json({ error: "Organization ID not configured" }, { status: 500 });
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -25,7 +32,8 @@ export async function GET() {
     // Get users from Supabase
     const { data: supabaseUsers, error } = await supabase
       .from("clerk_users")
-      .select("*");
+      .select("*")
+      .eq("organization_id", session.orgId);
 
     if (error) {
       console.error("Error listing clerk users:", error);
@@ -33,14 +41,8 @@ export async function GET() {
     }
 
     // Get organization memberships from Clerk
-    const organizationId = process.env.DEFAULT_ORGANIZATION_ID;
-    if (!organizationId) {
-      console.error("DEFAULT_ORGANIZATION_ID is not set");
-      return NextResponse.json({ error: "Organization ID not configured" }, { status: 500 });
-    }
-
     const memberships = await clerkClient.organizations.getOrganizationMembershipList({
-      organizationId
+      organizationId: session.orgId
     });
 
     // Create a map of user IDs to their roles
