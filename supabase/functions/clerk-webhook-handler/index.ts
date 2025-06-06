@@ -20,9 +20,20 @@ interface ClerkUserEventData {
   object: string;
 }
 
+interface ClerkOrganizationEventData {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: number;
+  updated_at: number;
+  created_by: string;
+  public_metadata: Record<string, any>;
+  private_metadata: Record<string, any>;
+}
+
 interface ClerkEvent {
-  type: 'user.created' | 'user.updated' | 'user.deleted' | string;
-  data: ClerkUserEventData;
+  type: 'user.created' | 'user.updated' | 'user.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | string;
+  data: ClerkUserEventData | ClerkOrganizationEventData;
   object: 'event';
   timestamp: number;
   event_attributes?: {
@@ -286,6 +297,94 @@ Deno.serve(async (req) => {
              console.log('Successfully deleted clerk user for Clerk ID:', userData.id);
         }
         break;
+      }
+
+      case 'organization.created': {
+        console.log('Processing organization.created event for Clerk ID:', event.data.id);
+        const orgData = event.data as ClerkOrganizationEventData;
+
+        // Create organization in Supabase
+        const { data: newOrg, error: insertError } = await supabaseAdmin
+          .from('organizations')
+          .insert({
+            id: orgData.id, // Use Clerk's org ID as the primary key
+            name: orgData.name,
+            description: orgData.public_metadata?.description || null,
+            logo_url: orgData.public_metadata?.logo_url || null,
+            created_at: new Date(orgData.created_at).toISOString(),
+            updated_at: new Date(orgData.updated_at).toISOString()
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Error inserting organization:', insertError);
+          throw insertError;
+        }
+
+        return new Response(JSON.stringify({ 
+          status: 'success',
+          message: 'Created new organization',
+          organizationId: newOrg.id
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'organization.updated': {
+        console.log('Processing organization.updated event for Clerk ID:', event.data.id);
+        const orgData = event.data as ClerkOrganizationEventData;
+
+        // Update organization in Supabase
+        const { error: updateError } = await supabaseAdmin
+          .from('organizations')
+          .update({
+            name: orgData.name,
+            description: orgData.public_metadata?.description || null,
+            logo_url: orgData.public_metadata?.logo_url || null,
+            updated_at: new Date(orgData.updated_at).toISOString()
+          })
+          .eq('id', orgData.id);
+
+        if (updateError) {
+          console.error('Error updating organization:', updateError);
+          throw updateError;
+        }
+
+        return new Response(JSON.stringify({ 
+          status: 'success',
+          message: 'Updated organization',
+          organizationId: orgData.id
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'organization.deleted': {
+        console.log('Processing organization.deleted event for Clerk ID:', event.data.id);
+        const orgData = event.data as ClerkOrganizationEventData;
+
+        // Delete organization in Supabase
+        const { error: deleteError } = await supabaseAdmin
+          .from('organizations')
+          .delete()
+          .eq('id', orgData.id);
+
+        if (deleteError) {
+          console.error('Error deleting organization:', deleteError);
+          throw deleteError;
+        }
+
+        return new Response(JSON.stringify({ 
+          status: 'success',
+          message: 'Deleted organization',
+          organizationId: orgData.id
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       default:

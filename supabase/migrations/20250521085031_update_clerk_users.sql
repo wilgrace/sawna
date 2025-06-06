@@ -6,7 +6,7 @@ WHERE NOT EXISTS (SELECT 1 FROM public.organizations WHERE name = 'Default Organ
 -- Get the default organization ID
 DO $$
 DECLARE
-    default_org_id uuid;
+    default_org_id text;
 BEGIN
     SELECT id INTO default_org_id FROM public.organizations WHERE name = 'Default Organization';
     

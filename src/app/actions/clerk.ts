@@ -1,28 +1,9 @@
 "use server"
 
 import { createClient } from "@supabase/supabase-js"
+import { clerkClient } from "@clerk/clerk-sdk-node"
 
-export interface CreateClerkUserParams {
-  clerk_user_id?: string;
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  organization_id?: string;
-}
-
-interface CreateClerkUserResult {
-  success: boolean
-  id?: string
-  error?: string
-}
-
-interface GetClerkUserResult {
-  success: boolean
-  id?: string
-  error?: string
-}
-
-export async function getClerkUser(clerkUserId: string): Promise<GetClerkUserResult> {
+async function getClerkUser(clerkUserId: string) {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,7 +50,7 @@ export async function getClerkUser(clerkUserId: string): Promise<GetClerkUserRes
   }
 }
 
-export async function createClerkUser(params: CreateClerkUserParams): Promise<CreateClerkUserResult> {
+async function createClerkUser(params: { clerk_user_id?: string; email: string; first_name?: string; last_name?: string; organization_id?: string }) {
   try {
     if (!params.clerk_user_id) {
       return {
@@ -164,7 +145,7 @@ export async function createClerkUser(params: CreateClerkUserParams): Promise<Cr
   }
 }
 
-export async function ensureClerkUser(clerkUserId: string, email: string, firstName: string | null, lastName: string | null): Promise<GetClerkUserResult> {
+async function ensureClerkUser(clerkUserId: string, email: string, firstName: string | null, lastName: string | null) {
   try {
     console.log("Ensuring clerk user exists:", {
       clerkUserId,
@@ -257,7 +238,7 @@ export async function ensureClerkUser(clerkUserId: string, email: string, firstN
   }
 }
 
-export async function listClerkUsers() {
+async function listClerkUsers() {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -272,47 +253,208 @@ export async function listClerkUsers() {
 
     const { data, error } = await supabase
       .from("clerk_users")
-      .select("id, email, first_name, last_name, organization_id, is_super_admin, date_of_birth, gender, ethnicity, home_postal_code, clerk_user_id, created_at, updated_at")
-      .order("created_at", { ascending: false })
+      .select("*")
 
     if (error) {
       console.error("Error listing clerk users:", error)
-      return { success: false, error: error.message, users: [] }
+      return {
+        success: false,
+        error: error.message
+      }
     }
 
-    return { success: true, users: data }
+    return {
+      success: true,
+      users: data
+    }
   } catch (error) {
     console.error("Error in listClerkUsers:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error occurred", users: [] }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    }
   }
 }
 
-export async function updateClerkUser(id: string, data: any) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: { autoRefreshToken: false, persistSession: false }
+async function updateClerkUser(id: string, data: any) {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    const { error } = await supabase
+      .from("clerk_users")
+      .update(data)
+      .eq("id", id)
+
+    if (error) {
+      console.error("Error updating clerk user:", error)
+      return {
+        success: false,
+        error: error.message
+      }
     }
-  );
-  const { error } = await supabase
-    .from("clerk_users")
-    .update(data)
-    .eq("id", id);
-  return { error };
+
+    return {
+      success: true
+    }
+  } catch (error) {
+    console.error("Error in updateClerkUser:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    }
+  }
 }
 
-export async function deleteClerkUser(id: string) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: { autoRefreshToken: false, persistSession: false }
+async function deleteClerkUser(id: string) {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    const { error } = await supabase
+      .from("clerk_users")
+      .delete()
+      .eq("id", id)
+
+    if (error) {
+      console.error("Error deleting clerk user:", error)
+      return {
+        success: false,
+        error: error.message
+      }
     }
-  );
-  const { error } = await supabase
-    .from("clerk_users")
-    .delete()
-    .eq("id", id);
-  return { error };
+
+    return {
+      success: true
+    }
+  } catch (error) {
+    console.error("Error in deleteClerkUser:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    }
+  }
+}
+
+async function syncOrganizationToClerk(organizationId: string) {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    // Get organization details from Supabase
+    const { data: org, error: orgError } = await supabase
+      .from("organizations")
+      .select("*")
+      .eq("id", organizationId)
+      .single()
+
+    if (orgError) {
+      console.error("Error getting organization:", orgError)
+      return {
+        success: false,
+        error: orgError.message
+      }
+    }
+
+    if (!org) {
+      return {
+        success: false,
+        error: "Organization not found"
+      }
+    }
+
+    // Get all users in the organization
+    const { data: users, error: usersError } = await supabase
+      .from("clerk_users")
+      .select("clerk_user_id")
+      .eq("organization_id", organizationId)
+
+    if (usersError) {
+      console.error("Error getting organization users:", usersError)
+      return {
+        success: false,
+        error: usersError.message
+      }
+    }
+
+    // Create or update organization in Clerk
+    try {
+      const clerkOrg = await clerkClient.organizations.createOrganization({
+        name: org.name,
+        createdBy: users[0]?.clerk_user_id // Use the first user as the creator
+      })
+
+      // Add all users to the organization
+      for (const user of users) {
+        await clerkClient.organizations.createOrganizationMembership({
+          organizationId: clerkOrg.id,
+          userId: user.clerk_user_id,
+          role: "basic_member"
+        })
+      }
+
+      return {
+        success: true,
+        organizationId: clerkOrg.id
+      }
+    } catch (clerkError) {
+      console.error("Error syncing with Clerk:", clerkError)
+      return {
+        success: false,
+        error: clerkError instanceof Error ? clerkError.message : "Unknown error occurred"
+      }
+    }
+  } catch (error) {
+    console.error("Error in syncOrganizationToClerk:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred"
+    }
+  }
+}
+
+async function handleOrganizationChange(organizationId: string) {
+  try {
+    const result = await syncOrganizationToClerk(organizationId)
+    if (!result.success) {
+      console.error("Failed to sync organization to Clerk:", result.error)
+    }
+  } catch (error) {
+    console.error("Error in handleOrganizationChange:", error)
+  }
+}
+
+export {
+  getClerkUser,
+  createClerkUser,
+  ensureClerkUser,
+  listClerkUsers,
+  updateClerkUser,
+  deleteClerkUser,
+  syncOrganizationToClerk,
+  handleOrganizationChange
 } 

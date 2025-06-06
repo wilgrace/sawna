@@ -47,7 +47,7 @@ CREATE POLICY "Users can delete their own bookings"
         )
     );
 
--- Second part: Update session templates timezone
+-- Update session templates timezone
 ALTER TABLE session_templates
 ADD COLUMN IF NOT EXISTS timezone text NOT NULL DEFAULT 'UTC';
 
