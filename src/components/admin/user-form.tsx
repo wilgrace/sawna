@@ -11,6 +11,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Profile } from "@/types/profile";
 import { createClient } from "@supabase/supabase-js";
 import { updateClerkUser, deleteClerkUser, createClerkUser } from "@/app/actions/clerk";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useUser } from "@clerk/nextjs";
+import { ROLES } from "@/lib/auth-utils";
+import { Protect } from "@clerk/nextjs";
 
 interface UserFormProps {
   open: boolean;
@@ -23,6 +27,20 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
   const [form, setForm] = useState<Partial<Profile>>({});
   const [loading, setLoading] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const { user: currentUser } = useUser();
+
+  // Define available roles based on current user's role
+  const isSuperAdmin = currentUser?.organizationMemberships?.[0]?.role === ROLES.SUPER_ADMIN;
+  const availableRoles = isSuperAdmin
+    ? [
+        { value: ROLES.SUPER_ADMIN, label: "Super Admin" },
+        { value: ROLES.ADMIN, label: "Admin" },
+        { value: ROLES.USER, label: "User" }
+      ]
+    : [
+        { value: ROLES.ADMIN, label: "Admin" },
+        { value: ROLES.USER, label: "User" }
+      ];
 
   useEffect(() => {
     if (user) {
@@ -33,17 +51,17 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
         first_name: "",
         last_name: "",
         organization_id: "",
-        is_super_admin: false,
         date_of_birth: "",
         gender: "",
         ethnicity: "",
         home_postal_code: "",
+        role: ROLES.USER
       });
     }
   }, [user]);
 
   const handleChange = (field: keyof Profile, value: any) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -61,12 +79,12 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
         first_name: form.first_name,
         last_name: form.last_name,
         organization_id: form.organization_id,
-        is_super_admin: form.is_super_admin,
         date_of_birth: form.date_of_birth || null,
         gender: form.gender || null,
         ethnicity: form.ethnicity || null,
         home_postal_code: form.home_postal_code || null,
         clerk_user_id: form.clerk_user_id || undefined,
+        role: form.role
       });
       result = { error };
     } else {
@@ -76,12 +94,12 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
         first_name: form.first_name || undefined,
         last_name: form.last_name || undefined,
         organization_id: form.organization_id || undefined,
-        is_super_admin: form.is_super_admin,
         date_of_birth: form.date_of_birth || undefined,
         gender: form.gender || undefined,
         ethnicity: form.ethnicity || undefined,
         home_postal_code: form.home_postal_code || undefined,
         clerk_user_id: form.clerk_user_id || undefined,
+        role: form.role
       } as any);
       result = { error: error || (success ? undefined : 'Unknown error') };
     }
@@ -104,7 +122,7 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
       onSuccess();
       onClose();
     } else {
-      alert("Error deleting user: " + error.message);
+      alert("Error deleting user: " + error);
     }
   };
 
@@ -154,14 +172,6 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
               onChange={(e) => handleChange("organization_id", e.target.value)}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="is_super_admin">Super Admin</Label>
-            <Switch
-              id="is_super_admin"
-              checked={!!form.is_super_admin}
-              onCheckedChange={(checked) => handleChange("is_super_admin", checked)}
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="date_of_birth">Date of Birth</Label>
             <Input
@@ -205,6 +215,51 @@ export function UserForm({ open, onClose, user, onSuccess }: UserFormProps) {
               required={!user}
             />
           </div>
+          <Protect
+            role={ROLES.SUPER_ADMIN}
+            fallback={
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Select
+                  value={form.role || ROLES.USER}
+                  onValueChange={(value) => handleChange("role", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: ROLES.ADMIN, label: "Admin" },
+                      { value: ROLES.USER, label: "User" }
+                    ].map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            }
+          >
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={form.role || ROLES.USER}
+                onValueChange={(value) => handleChange("role", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRoles.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </Protect>
           <div className="sticky bottom-0 bg-white border-t px-6 py-4 -mx-6 -mb-4">
             <div className="flex justify-between w-full">
               {user && (

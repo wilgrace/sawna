@@ -4,12 +4,13 @@ export interface Profile {
   first_name: string | null;
   last_name: string | null;
   organization_id: string | null;
-  is_super_admin: boolean;
   date_of_birth?: string | null;
   gender?: string | null;
   ethnicity?: string | null;
   home_postal_code?: string | null;
   clerk_user_id?: string;
+  role?: string | null;
+  roleLabel?: string | null;
   created_at: string;
   updated_at: string;
 } 

@@ -289,9 +289,37 @@ async function updateClerkUser(id: string, data: any) {
       }
     )
 
+    // If role is being updated, update it in Clerk first
+    if (data.role) {
+      try {
+        const { data: userData } = await supabase
+          .from("clerk_users")
+          .select("clerk_user_id, organization_id")
+          .eq("id", id)
+          .single();
+
+        if (userData?.clerk_user_id && userData?.organization_id) {
+          await clerkClient.organizations.updateOrganizationMembership({
+            organizationId: userData.organization_id,
+            userId: userData.clerk_user_id,
+            role: data.role
+          });
+        }
+      } catch (clerkError) {
+        console.error("Error updating role in Clerk:", clerkError);
+        return {
+          success: false,
+          error: "Failed to update role in Clerk"
+        };
+      }
+    }
+
+    // Remove role from the data before updating Supabase
+    const { role, ...supabaseData } = data;
+
     const { error } = await supabase
       .from("clerk_users")
-      .update(data)
+      .update(supabaseData)
       .eq("id", id)
 
     if (error) {
@@ -327,13 +355,48 @@ async function deleteClerkUser(id: string) {
       }
     )
 
+    // First get the user's Clerk ID
+    const { data: userData, error: userError } = await supabase
+      .from("clerk_users")
+      .select("clerk_user_id")
+      .eq("id", id)
+      .single()
+
+    if (userError) {
+      console.error("Error getting clerk user:", userError)
+      return {
+        success: false,
+        error: userError.message
+      }
+    }
+
+    if (!userData?.clerk_user_id) {
+      console.error("No clerk_user_id found for user:", id)
+      return {
+        success: false,
+        error: "No Clerk user ID found"
+      }
+    }
+
+    // Delete from Clerk first
+    try {
+      await clerkClient.users.deleteUser(userData.clerk_user_id)
+    } catch (clerkError) {
+      console.error("Error deleting user from Clerk:", clerkError)
+      return {
+        success: false,
+        error: "Failed to delete user from Clerk"
+      }
+    }
+
+    // Then delete from Supabase
     const { error } = await supabase
       .from("clerk_users")
       .delete()
       .eq("id", id)
 
     if (error) {
-      console.error("Error deleting clerk user:", error)
+      console.error("Error deleting clerk user from Supabase:", error)
       return {
         success: false,
         error: error.message

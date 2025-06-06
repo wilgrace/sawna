@@ -1,8 +1,41 @@
-import { listClerkUsers } from "@/app/actions/clerk";
-import { UsersPage } from "@/components/admin/users-page";
+"use client"
 
-export default async function Page() {
-  const { users, error } = await listClerkUsers();
+import { useEffect, useState } from "react";
+import { UsersPage } from "@/components/admin/users-page";
+import { Profile } from "@/types/profile";
+
+export default function Page() {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch('/api/users');
+        const data = await response.json();
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setUsers(data.users || []);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch users');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex-1 space-y-4 p-8 pt-6">
+        <div>Loading users...</div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -12,5 +45,5 @@ export default async function Page() {
     );
   }
 
-  return <UsersPage initialUsers={users || []} />;
+  return <UsersPage initialUsers={users} />;
 } 

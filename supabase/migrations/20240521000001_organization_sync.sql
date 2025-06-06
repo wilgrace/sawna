@@ -220,6 +220,7 @@ ALTER TABLE public.session_instances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies
+DROP POLICY IF EXISTS "Users can read their own organizations" ON public.organizations;
 CREATE POLICY "Users can read their own organizations"
 ON public.organizations
 FOR SELECT
@@ -232,6 +233,7 @@ USING (
   )
 );
 
+DROP POLICY IF EXISTS "Super admins can manage all organizations" ON public.organizations;
 CREATE POLICY "Super admins can manage all organizations"
 ON public.organizations
 FOR ALL
@@ -244,6 +246,7 @@ USING (
   )
 );
 
+DROP POLICY IF EXISTS "Admins can delete bookings for their session instances" ON public.bookings;
 CREATE POLICY "Admins can delete bookings for their session instances"
 ON public.bookings
 FOR DELETE

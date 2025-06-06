@@ -7,8 +7,10 @@ export default async function BookingLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { userId } = await auth()
-  const isAdmin = false // We'll implement admin check later
+  const { userId, orgRole } = await auth()
+  
+  // Check if user is an admin or super admin
+  const isAdmin = orgRole === 'org:admin' || orgRole === 'org:super_admin'
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">

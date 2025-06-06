@@ -1,6 +1,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { Webhook } from 'npm:svix@1.15.0';
 import { corsHeaders } from '../_shared/cors.ts'; // Optional: manage CORS if needed
+import { Clerk } from 'https://esm.sh/@clerk/backend@0.35.0';
+
+// Initialize Clerk client
+const clerkSecretKey = Deno.env.get('CLERK_SECRET_KEY');
+if (!clerkSecretKey) {
+  throw new Error('CLERK_SECRET_KEY environment variable is not set');
+}
+const clerk = Clerk({ secretKey: clerkSecretKey });
 
 // Define expected Clerk event payload structure (adjust based on actual usage)
 interface ClerkUserEventData {
@@ -32,8 +40,15 @@ interface ClerkOrganizationEventData {
 }
 
 interface ClerkEvent {
-  type: 'user.created' | 'user.updated' | 'user.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | string;
-  data: ClerkUserEventData | ClerkOrganizationEventData;
+  type: 'user.created' | 'user.updated' | 'user.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organizationMembership.updated' | string;
+  data: ClerkUserEventData | ClerkOrganizationEventData | {
+    id: string;
+    organization_id: string;
+    public_user_data: {
+      user_id: string;
+    };
+    role: string;
+  };
   object: 'event';
   timestamp: number;
   event_attributes?: {
@@ -216,6 +231,156 @@ Deno.serve(async (req) => {
           console.error('Error inserting clerk user:', insertError);
           throw insertError;
         }
+
+        // Create organization membership in Clerk
+        try {
+          if (!clerkSecretKey) {
+            throw new Error('CLERK_SECRET_KEY is not set');
+          }
+          
+          console.log('Creating organization membership in Clerk:', {
+            organizationId: defaultOrgIdFromEnv,
+            userId: userData.id
+          });
+
+          // First, verify the organization exists in Clerk
+          try {
+            const org = await clerk.organizations.getOrganization({ organizationId: defaultOrgIdFromEnv });
+            console.log('Organization exists in Clerk:', {
+              id: org.id,
+              name: org.name
+            });
+          } catch (orgError: any) {
+            console.error('Error verifying organization in Clerk:', {
+              error: orgError,
+              status: orgError.status,
+              message: orgError.message,
+              details: orgError.errors
+            });
+            throw orgError;
+          }
+
+          // Verify the user exists in Clerk
+          try {
+            const user = await clerk.users.getUser(userData.id);
+            console.log('User exists in Clerk:', {
+              id: user.id,
+              email: user.emailAddresses[0]?.emailAddress
+            });
+          } catch (userError: any) {
+            console.error('Error verifying user in Clerk:', {
+              error: userError,
+              status: userError.status,
+              message: userError.message,
+              details: userError.errors
+            });
+            throw userError;
+          }
+
+          // Add a small delay to ensure user is fully created
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // Check if user is already a member
+          try {
+            const memberships = await clerk.organizations.getOrganizationMembershipList({
+              organizationId: defaultOrgIdFromEnv
+            });
+            
+            const isAlreadyMember = memberships.some((m: { publicUserData?: { userId: string } }) => 
+              m.publicUserData?.userId === userData.id
+            );
+            if (isAlreadyMember) {
+              console.log('User is already a member of the organization');
+              return;
+            }
+          } catch (membershipError: any) {
+            console.error('Error checking existing memberships:', {
+              error: membershipError,
+              status: membershipError.status,
+              message: membershipError.message,
+              details: membershipError.errors
+            });
+            // Continue with creating membership even if check fails
+          }
+          
+          // Create the membership
+          try {
+            console.log('Attempting to create organization membership with:', {
+              organizationId: defaultOrgIdFromEnv,
+              userId: userData.id,
+              role: "org:user"
+            });
+
+            // Create the membership using the Clerk instance
+            const membership = await clerk.organizations.createOrganizationMembership({
+              organizationId: defaultOrgIdFromEnv,
+              userId: userData.id,
+              role: "org:user"
+            });
+
+            console.log('Successfully created organization membership:', {
+              organizationId: membership.organizationId,
+              userId: membership.publicUserData?.userId,
+              role: membership.role
+            });
+          } catch (membershipError: any) {
+            console.error('Error creating organization membership:', {
+              error: membershipError,
+              status: membershipError.status,
+              message: membershipError.message,
+              details: membershipError.errors,
+              requestData: {
+                organizationId: defaultOrgIdFromEnv,
+                userId: userData.id
+              }
+            });
+
+            // Try to get more information about the error
+            if (membershipError.status === 404) {
+              try {
+                // Double check the organization exists
+                const orgCheck = await clerk.organizations.getOrganization({
+                  organizationId: defaultOrgIdFromEnv
+                });
+                console.log('Organization check result:', {
+                  exists: !!orgCheck,
+                  id: orgCheck?.id,
+                  name: orgCheck?.name
+                });
+
+                // Double check the user exists
+                const userCheck = await clerk.users.getUser(userData.id);
+                console.log('User check result:', {
+                  exists: !!userCheck,
+                  id: userCheck?.id,
+                  email: userCheck?.emailAddresses[0]?.emailAddress
+                });
+              } catch (checkError: any) {
+                console.error('Error during verification checks:', {
+                  error: checkError,
+                  message: checkError.message
+                });
+              }
+            }
+
+            throw membershipError;
+          }
+        } catch (clerkError: any) {
+          console.error('Error in Clerk operations:', {
+            error: clerkError,
+            status: clerkError.status,
+            message: clerkError.message,
+            details: clerkError.errors
+          });
+          // Log the environment variables (without sensitive values)
+          console.log('Environment check:', {
+            hasClerkSecretKey: !!clerkSecretKey,
+            hasDefaultOrgId: !!defaultOrgIdFromEnv,
+            envKeys: Object.keys(Deno.env.toObject())
+          });
+          // Don't throw here, as the user is already created in Supabase
+        }
+
         console.log('Successfully inserted new clerk user:', newUser);
         return new Response(JSON.stringify({ 
           status: 'success',
@@ -385,6 +550,36 @@ Deno.serve(async (req) => {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
+
+      case 'organizationMembership.updated': {
+        console.log('Processing organizationMembership.updated event:', event.data);
+        const membershipData = event.data as {
+          id: string;
+          organization_id: string;
+          public_user_data: {
+            user_id: string;
+          };
+          role: string;
+        };
+
+        // Update the user's role in our database
+        const { error: updateError } = await supabaseAdmin
+          .from('clerk_users')
+          .update({
+            role: membershipData.role,
+            updated_at: new Date().toISOString()
+          })
+          .eq('clerk_user_id', membershipData.public_user_data.user_id)
+          .eq('organization_id', membershipData.organization_id);
+
+        if (updateError) {
+          console.error('Error updating clerk user after role change:', updateError);
+          throw updateError;
+        }
+
+        console.log('Successfully processed role update for user:', membershipData.public_user_data.user_id);
+        break;
       }
 
       default:
